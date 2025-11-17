@@ -11,7 +11,8 @@ SRC_DIR = src
 BUILD_DIR = build
 BIN_DIR = bin
 
-# Archivos fuente principales (SIN kernel.c, usamos main.c)
+# Archivos fuente principales
+COMMON_SRC = $(SRC_DIR)/common.c
 SCHEDULER_SRC = $(SRC_DIR)/scheduler/scheduler.c
 MEMORY_SRC = $(SRC_DIR)/memory/memory_manager.c
 NETWORK_SRC = $(SRC_DIR)/network/network.c $(SRC_DIR)/network/discovery.c
@@ -21,7 +22,7 @@ ML_SRC = $(SRC_DIR)/ml/ml_lib.c
 MAIN_SRC = $(SRC_DIR)/main.c
 
 # Todos los archivos fuente
-ALL_SRCS = $(MAIN_SRC) $(SCHEDULER_SRC) $(MEMORY_SRC) \
+ALL_SRCS = $(COMMON_SRC) $(MAIN_SRC) $(SCHEDULER_SRC) $(MEMORY_SRC) \
            $(NETWORK_SRC) $(SYNC_SRC) $(FAULT_SRC) $(ML_SRC)
 
 # Archivos objeto
