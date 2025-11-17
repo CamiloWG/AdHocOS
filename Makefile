@@ -11,8 +11,7 @@ SRC_DIR = src
 BUILD_DIR = build
 BIN_DIR = bin
 
-# Archivos fuente principales
-KERNEL_SRC = $(SRC_DIR)/kernel/kernel.c
+# Archivos fuente principales (SIN kernel.c, usamos main.c)
 SCHEDULER_SRC = $(SRC_DIR)/scheduler/scheduler.c
 MEMORY_SRC = $(SRC_DIR)/memory/memory_manager.c
 NETWORK_SRC = $(SRC_DIR)/network/network.c $(SRC_DIR)/network/discovery.c
@@ -22,7 +21,7 @@ ML_SRC = $(SRC_DIR)/ml/ml_lib.c
 MAIN_SRC = $(SRC_DIR)/main.c
 
 # Todos los archivos fuente
-ALL_SRCS = $(MAIN_SRC) $(KERNEL_SRC) $(SCHEDULER_SRC) $(MEMORY_SRC) \
+ALL_SRCS = $(MAIN_SRC) $(SCHEDULER_SRC) $(MEMORY_SRC) \
            $(NETWORK_SRC) $(SYNC_SRC) $(FAULT_SRC) $(ML_SRC)
 
 # Archivos objeto
@@ -41,9 +40,9 @@ all: directories $(TARGET)
 	@echo "         make test-cluster - Para cluster de 3 nodos"
 
 directories:
-	@mkdir -p $(BUILD_DIR)/kernel $(BUILD_DIR)/scheduler $(BUILD_DIR)/memory
+	@mkdir -p $(BUILD_DIR)/scheduler $(BUILD_DIR)/memory
 	@mkdir -p $(BUILD_DIR)/network $(BUILD_DIR)/sync $(BUILD_DIR)/fault_tolerance
-	@mkdir -p $(BUILD_DIR)/ml $(BIN_DIR)
+	@mkdir -p $(BUILD_DIR)/ml $(BIN_DIR) logs
 
 $(TARGET): $(OBJS)
 	$(CC) $(OBJS) $(LDFLAGS) -o $(TARGET)
@@ -63,8 +62,9 @@ run: $(TARGET)
 	@echo "🚀 Ejecutando nodo único..."
 	./$(TARGET) 0
 
-test-cluster: $(TARGET)
+test-cluster: directories $(TARGET)
 	@echo "🚀 Iniciando cluster de 3 nodos..."
+	@mkdir -p logs
 	@./$(TARGET) 0 > logs/node0.log 2>&1 & echo $$! > cluster.pids
 	@sleep 1
 	@./$(TARGET) 1 > logs/node1.log 2>&1 & echo $$! >> cluster.pids
@@ -105,6 +105,9 @@ info:
 	@echo "Archivos objeto: $(words $(OBJS))"
 	@echo "Compilador: $(CC)"
 	@echo "Flags: $(CFLAGS)"
+	@echo ""
+	@echo "Archivos a compilar:"
+	@for src in $(ALL_SRCS); do echo "  - $$src"; done
 
 debug: CFLAGS += -DDEBUG -g3
 debug: clean all
