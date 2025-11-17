@@ -3,139 +3,111 @@
 # ========================================
 
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -pthread -g
+CFLAGS = -Wall -Wextra -O2 -pthread -g -I$(SRC_DIR)
 LDFLAGS = -pthread -lm
 
 # Directorios
 SRC_DIR = src
 BUILD_DIR = build
 BIN_DIR = bin
-KERNEL_DIR = $(SRC_DIR)/kernel
-NET_DIR = $(SRC_DIR)/network
-SCHED_DIR = $(SRC_DIR)/scheduler
-MEM_DIR = $(SRC_DIR)/memory
 
-# Archivos fuente
-KERNEL_SRCS = kernel.c
-SCHEDULER_SRCS = scheduler.c
-MEMORY_SRCS = memory_manager.c
-NETWORK_SRCS = network.c discovery.c
-ML_SRCS = ml_lib.c
+# Archivos fuente principales
+KERNEL_SRC = $(SRC_DIR)/kernel/kernel.c
+SCHEDULER_SRC = $(SRC_DIR)/scheduler/scheduler.c
+MEMORY_SRC = $(SRC_DIR)/memory/memory_manager.c
+NETWORK_SRC = $(SRC_DIR)/network/network.c $(SRC_DIR)/network/discovery.c
+SYNC_SRC = $(SRC_DIR)/sync/sync.c
+FAULT_SRC = $(SRC_DIR)/fault_tolerance/fault_manager.c
+ML_SRC = $(SRC_DIR)/ml/ml_lib.c
+MAIN_SRC = $(SRC_DIR)/main.c
 
-# Objetivos
-TARGET = decentralized_os
-BOOTLOADER = bootloader
+# Todos los archivos fuente
+ALL_SRCS = $(MAIN_SRC) $(KERNEL_SRC) $(SCHEDULER_SRC) $(MEMORY_SRC) \
+           $(NETWORK_SRC) $(SYNC_SRC) $(FAULT_SRC) $(ML_SRC)
+
+# Archivos objeto
+OBJS = $(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(ALL_SRCS))
+
+# Ejecutable
+TARGET = $(BIN_DIR)/decentralized_os
 
 # ========================================
-# Reglas de compilación
+# Reglas principales
 # ========================================
 
-all: directories $(TARGET) bootloader image
+all: directories $(TARGET)
+	@echo "✅ Compilación exitosa!"
+	@echo "Ejecuta: make run        - Para un solo nodo"
+	@echo "         make test-cluster - Para cluster de 3 nodos"
 
 directories:
-	@mkdir -p $(BUILD_DIR) $(BIN_DIR)
+	@mkdir -p $(BUILD_DIR)/kernel $(BUILD_DIR)/scheduler $(BUILD_DIR)/memory
+	@mkdir -p $(BUILD_DIR)/network $(BUILD_DIR)/sync $(BUILD_DIR)/fault_tolerance
+	@mkdir -p $(BUILD_DIR)/ml $(BIN_DIR)
 
-$(TARGET): $(BUILD_DIR)/main.o
-	$(CC) $(LDFLAGS) -o $(BIN_DIR)/$(TARGET) $(BUILD_DIR)/*.o
-	@echo "✅ Kernel compilado exitosamente"
+$(TARGET): $(OBJS)
+	$(CC) $(OBJS) $(LDFLAGS) -o $(TARGET)
+	@echo "✅ Kernel compilado: $(TARGET)"
 
+# Compilar archivos individuales
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $< -o $@
+	@echo "Compilado: $<"
 
 # ========================================
-# Bootloader (para arranque desde hardware real)
-# ========================================
-
-bootloader:
-	@echo "Compilando bootloader..."
-	nasm -f bin boot/bootloader.asm -o $(BIN_DIR)/bootloader.bin
-	@echo "✅ Bootloader creado"
-
-# ========================================
-# Crear imagen del SO
-# ========================================
-
-image: $(TARGET) bootloader
-	@echo "Creando imagen del sistema operativo..."
-	dd if=/dev/zero of=$(BIN_DIR)/os.img bs=1M count=32
-	dd if=$(BIN_DIR)/bootloader.bin of=$(BIN_DIR)/os.img conv=notrunc
-	dd if=$(BIN_DIR)/$(TARGET) of=$(BIN_DIR)/os.img seek=1 conv=notrunc
-	@echo "✅ Imagen os.img creada (32MB)"
-
-# ========================================
-# Imagen ISO para máquinas virtuales
-# ========================================
-
-iso: image
-	@echo "Creando imagen ISO..."
-	mkdir -p iso/boot/grub
-	cp $(BIN_DIR)/$(TARGET) iso/boot/
-	echo 'menuentry "Decentralized OS" {' > iso/boot/grub/grub.cfg
-	echo '    multiboot /boot/$(TARGET)' >> iso/boot/grub/grub.cfg
-	echo '}' >> iso/boot/grub/grub.cfg
-	grub-mkrescue -o $(BIN_DIR)/decentralized_os.iso iso/
-	@echo "✅ ISO creado: decentralized_os.iso"
-
-# ========================================
-# Testing y debugging
+# Ejecución y pruebas
 # ========================================
 
 run: $(TARGET)
-	@echo "Ejecutando sistema operativo..."
-	./$(BIN_DIR)/$(TARGET)
+	@echo "🚀 Ejecutando nodo único..."
+	./$(TARGET) 0
 
-run-qemu: image
-	@echo "Ejecutando en QEMU..."
-	qemu-system-x86_64 -drive format=raw,file=$(BIN_DIR)/os.img -m 512M
-
-debug: $(TARGET)
-	gdb ./$(BIN_DIR)/$(TARGET)
-
-# ========================================
-# Testing distribuido (múltiples nodos)
-# ========================================
-
-test-cluster:
-	@echo "Iniciando cluster de prueba con 3 nodos..."
-	@./$(BIN_DIR)/$(TARGET) 0 &
+test-cluster: $(TARGET)
+	@echo "🚀 Iniciando cluster de 3 nodos..."
+	@./$(TARGET) 0 > logs/node0.log 2>&1 & echo $$! > cluster.pids
 	@sleep 1
-	@./$(BIN_DIR)/$(TARGET) 1 &
+	@./$(TARGET) 1 > logs/node1.log 2>&1 & echo $$! >> cluster.pids
 	@sleep 1
-	@./$(BIN_DIR)/$(TARGET) 2 &
-	@echo "✅ Cluster iniciado - PIDs guardados en cluster.pids"
-	@ps aux | grep $(TARGET) | grep -v grep | awk '{print $$2}' > cluster.pids
+	@./$(TARGET) 2 > logs/node2.log 2>&1 & echo $$! >> cluster.pids
+	@echo "✅ Cluster iniciado. Ver logs en logs/"
+	@echo "   Para detener: make stop-cluster"
 
 stop-cluster:
-	@echo "Deteniendo cluster..."
+	@echo "🛑 Deteniendo cluster..."
 	@if [ -f cluster.pids ]; then \
-		cat cluster.pids | xargs kill -9 2>/dev/null || true; \
+		while read pid; do kill -9 $$pid 2>/dev/null || true; done < cluster.pids; \
 		rm cluster.pids; \
+		echo "✅ Cluster detenido"; \
+	else \
+		echo "⚠️  No hay cluster en ejecución"; \
 	fi
-	@echo "✅ Cluster detenido"
+
+logs:
+	@mkdir -p logs
+	@tail -f logs/node*.log
 
 # ========================================
 # Limpieza
 # ========================================
 
 clean:
-	rm -rf $(BUILD_DIR) $(BIN_DIR) iso/ *.pids
+	rm -rf $(BUILD_DIR) $(BIN_DIR) logs/ cluster.pids
 	@echo "✅ Limpieza completa"
 
-.PHONY: all clean directories bootloader image iso run run-qemu debug test-cluster stop-cluster
+# ========================================
+# Información y debug
+# ========================================
 
-# ========================================
-# Script de compilación rápida (build.sh)
-# ========================================
-# Crear archivo build.sh con el siguiente contenido:
-# #!/bin/bash
-# echo "🔨 Compilando Sistema Operativo Descentralizado..."
-# make clean
-# make all
-# if [ $? -eq 0 ]; then
-#     echo "✅ Compilación exitosa!"
-#     echo "Ejecuta 'make run' para probar el SO"
-#     echo "Ejecuta 'make test-cluster' para probar múltiples nodos"
-# else
-#     echo "❌ Error en la compilación"
-#     exit 1
-# fi
+info:
+	@echo "=== Información del Proyecto ==="
+	@echo "Archivos fuente: $(words $(ALL_SRCS))"
+	@echo "Archivos objeto: $(words $(OBJS))"
+	@echo "Compilador: $(CC)"
+	@echo "Flags: $(CFLAGS)"
+
+debug: CFLAGS += -DDEBUG -g3
+debug: clean all
+	@echo "✅ Compilado en modo debug"
+
+.PHONY: all clean directories run test-cluster stop-cluster logs info debug
