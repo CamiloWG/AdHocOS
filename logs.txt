@@ -1,0 +1,311 @@
+╔═══════════════════════════════════════════════════════════╗
+║   Compilando Sistema Operativo Descentralizado            ║
+╚═══════════════════════════════════════════════════════════╝
+
+🔍 Verificando dependencias...
+✅ Dependencias verificadas
+
+🧹 Limpiando archivos anteriores...
+🧹 Limpiando archivos...
+✅ Limpieza completa
+
+📁 Creando estructura de directorios...
+✅ Directorios creados
+
+🔨 Compilando proyecto...
+Compilando sistema principal (64-bit con AVX2)...
+gcc -Wall -Wextra -O2 -march=native -m64 -pthread -g -mavx2 -mfma -D_GNU_SOURCE -std=gnu11 -o bin/dos_64bit main_complete.c -pthread -lm -lcrypto -lssl -lz -lrt
+In file included from main_complete.c:11:
+kernel_64bit.c: In function ‘intelligent_task_assignment’:
+kernel_64bit.c:387:19: warning: comparison of integer expressions of different signedness: ‘node_id_t’ {aka ‘long unsigned int’} and ‘int’ [-Wsign-compare]
+  387 |     if (best_node != -1) {
+      |                   ^~
+kernel_64bit.c:350:14: warning: unused variable ‘current_time’ [-Wunused-variable]
+  350 |     uint64_t current_time = get_timestamp_ns();
+      |              ^~~~~~~~~~~~
+kernel_64bit.c: In function ‘init_distributed_kernel_64’:
+kernel_64bit.c:706:34: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 2 has type ‘uint64_t’ {aka ‘long unsigned int’} [-Wformat=]
+  706 |     printf("[KERNEL] Versión: %04X\n", kernel64->kernel_version);
+      |                               ~~~^     ~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                  |             |
+      |                                  unsigned int  uint64_t {aka long unsigned int}
+      |                               %04lX
+kernel_64bit.c: In function ‘example_ml_task’:
+kernel_64bit.c:726:29: warning: unused parameter ‘data’ [-Wunused-parameter]
+  726 | void* example_ml_task(void* data) {
+      |                       ~~~~~~^~~~
+In file included from main_complete.c:12:
+dfs.h: At top level:
+dfs.h:171:9: error: unknown type name ‘bool’
+  171 |         bool enable_compression;
+      |         ^~~~
+dfs.h:172:9: error: unknown type name ‘bool’
+  172 |         bool enable_encryption;
+      |         ^~~~
+dfs.h: In function ‘calculate_checksum’:
+dfs.h:207:5: warning: ‘SHA256_Init’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  207 |     SHA256_Init(&sha256);
+      |     ^~~~~~~~~~~
+In file included from dfs.h:13:
+/usr/include/openssl/sha.h:73:27: note: declared here
+   73 | OSSL_DEPRECATEDIN_3_0 int SHA256_Init(SHA256_CTX *c);
+      |                           ^~~~~~~~~~~
+dfs.h:208:5: warning: ‘SHA256_Update’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  208 |     SHA256_Update(&sha256, data, size);
+      |     ^~~~~~~~~~~~~
+/usr/include/openssl/sha.h:74:27: note: declared here
+   74 | OSSL_DEPRECATEDIN_3_0 int SHA256_Update(SHA256_CTX *c,
+      |                           ^~~~~~~~~~~~~
+dfs.h:209:5: warning: ‘SHA256_Final’ is deprecated: Since OpenSSL 3.0 [-Wdeprecated-declarations]
+  209 |     SHA256_Final(hash, &sha256);
+      |     ^~~~~~~~~~~~
+/usr/include/openssl/sha.h:76:27: note: declared here
+   76 | OSSL_DEPRECATEDIN_3_0 int SHA256_Final(unsigned char *md, SHA256_CTX *c);
+      |                           ^~~~~~~~~~~~
+dfs.h: In function ‘dfs_init’:
+dfs.h:252:40: error: ‘true’ undeclared (first use in this function)
+  252 |     g_dfs->config.enable_compression = true;
+      |                                        ^~~~
+dfs.h:189:1: note: ‘true’ is defined in header ‘<stdbool.h>’; did you forget to ‘#include <stdbool.h>’?
+  188 | #include <zlib.h>  // Para compresión
+  +++ |+#include <stdbool.h>
+  189 | 
+dfs.h:252:40: note: each undeclared identifier is reported only once for each function it appears in
+  252 |     g_dfs->config.enable_compression = true;
+      |                                        ^~~~
+dfs.h:253:39: error: ‘false’ undeclared (first use in this function)
+  253 |     g_dfs->config.enable_encryption = false;
+      |                                       ^~~~~
+dfs.h:253:39: note: ‘false’ is defined in header ‘<stdbool.h>’; did you forget to ‘#include <stdbool.h>’?
+dfs.h: In function ‘dfs_write’:
+dfs.h:352:12: warning: unused variable ‘blocks_needed’ [-Wunused-variable]
+  352 |     size_t blocks_needed = end_block - start_block + 1;
+      |            ^~~~~~~~~~~~~
+dfs.h: In function ‘dfs_read’:
+dfs.h:434:16: warning: comparison of integer expressions of different signedness: ‘off_t’ {aka ‘long int’} and ‘uint64_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+  434 |     if (offset >= file->size) return 0;
+      |                ^~
+In file included from main_complete.c:13:
+distributed_syscalls.h: In function ‘dml_train’:
+distributed_syscalls.h:8:17: warning: implicit declaration of function ‘distributed_syscall’; did you mean ‘handle_distributed_syscall’? [-Wimplicit-function-declaration]
+    8 |     return (int)distributed_syscall(SYS_ML_TRAIN, model_type,
+      |                 ^~~~~~~~~~~~~~~~~~~
+      |                 handle_distributed_syscall
+distributed_syscalls.h:8:37: error: ‘SYS_ML_TRAIN’ undeclared (first use in this function)
+    8 |     return (int)distributed_syscall(SYS_ML_TRAIN, model_type,
+      |                                     ^~~~~~~~~~~~
+distributed_syscalls.h: At top level:
+distributed_syscalls.h:17:36: error: unknown type name ‘syscall_result_t’; did you mean ‘SyscallRequest’?
+   17 | typedef void (*syscall_callback_t)(syscall_result_t* result);
+      |                                    ^~~~~~~~~~~~~~~~
+      |                                    SyscallRequest
+distributed_syscalls.h:21:5: error: unknown type name ‘syscall_context_t’
+   21 |     syscall_context_t* context;
+      |     ^~~~~~~~~~~~~~~~~
+distributed_syscalls.h: In function ‘async_syscall_handler’:
+distributed_syscalls.h:27:5: error: unknown type name ‘syscall_context_t’
+   27 |     syscall_context_t* ctx = (syscall_context_t*)arg;
+      |     ^~~~~~~~~~~~~~~~~
+distributed_syscalls.h:27:31: error: ‘syscall_context_t’ undeclared (first use in this function)
+   27 |     syscall_context_t* ctx = (syscall_context_t*)arg;
+      |                               ^~~~~~~~~~~~~~~~~
+distributed_syscalls.h:27:49: error: expected expression before ‘)’ token
+   27 |     syscall_context_t* ctx = (syscall_context_t*)arg;
+      |                                                 ^
+distributed_syscalls.h:30:18: error: request for member ‘args’ in something not a structure or union
+   30 |     int idx = ctx->args.syscall_id - 1000;
+      |                  ^~
+distributed_syscalls.h:31:34: error: ‘syscall_table’ undeclared (first use in this function)
+   31 |     if (idx >= 0 && idx < sizeof(syscall_table) / sizeof(syscall_table[0]) &&
+      |                                  ^~~~~~~~~~~~~
+distributed_syscalls.h:34:40: error: request for member ‘args’ in something not a structure or union
+   34 |         syscall_table[idx].handler(&ctx->args, &ctx->result);
+      |                                        ^~
+distributed_syscalls.h:34:52: error: request for member ‘result’ in something not a structure or union
+   34 |         syscall_table[idx].handler(&ctx->args, &ctx->result);
+      |                                                    ^~
+distributed_syscalls.h:36:12: error: request for member ‘result’ in something not a structure or union
+   36 |         ctx->result.error_code = ENOSYS;
+      |            ^~
+distributed_syscalls.h:37:12: error: request for member ‘result’ in something not a structure or union
+   37 |         ctx->result.return_value = -1;
+      |            ^~
+In file included from kernel_64bit.c:15:
+distributed_syscalls.h:41:22: error: request for member ‘completed’ in something not a structure or union
+   41 |     atomic_store(&ctx->completed, 1);
+      |                      ^~
+distributed_syscalls.h:41:5: error: ‘__atomic_store_ptr’ undeclared (first use in this function); did you mean ‘__atomic_store_n’?
+   41 |     atomic_store(&ctx->completed, 1);
+      |     ^~~~~~~~~~~~
+distributed_syscalls.h:41:5: error: argument 1 of ‘__atomic_store’ must be a non-void pointer type
+   41 |     atomic_store(&ctx->completed, 1);
+      |     ^~~~~~~~~~~~
+distributed_syscalls.h:44:28: error: request for member ‘completion_mutex’ in something not a structure or union
+   44 |     pthread_mutex_lock(&ctx->completion_mutex);
+      |                            ^~
+distributed_syscalls.h:45:29: error: request for member ‘completion_cond’ in something not a structure or union
+   45 |     pthread_cond_signal(&ctx->completion_cond);
+      |                             ^~
+distributed_syscalls.h:46:30: error: request for member ‘completion_mutex’ in something not a structure or union
+   46 |     pthread_mutex_unlock(&ctx->completion_mutex);
+      |                              ^~
+distributed_syscalls.h:49:12: error: request for member ‘callback’ in something not a structure or union
+   49 |     if (ctx->callback) {
+      |            ^~
+distributed_syscalls.h:50:12: error: request for member ‘callback’ in something not a structure or union
+   50 |         ctx->callback(&ctx->result);
+      |            ^~
+distributed_syscalls.h:50:27: error: request for member ‘result’ in something not a structure or union
+   50 |         ctx->callback(&ctx->result);
+      |                           ^~
+distributed_syscalls.h:26:42: warning: unused parameter ‘arg’ [-Wunused-parameter]
+   26 | static void* async_syscall_handler(void* arg) {
+      |                                    ~~~~~~^~~
+distributed_syscalls.h: At top level:
+distributed_syscalls.h:57:51: error: unknown type name ‘distributed_syscall_t’; did you mean ‘DistributedSyscall’?
+   57 | static async_syscall_t* distributed_syscall_async(distributed_syscall_t syscall_id,
+      |                                                   ^~~~~~~~~~~~~~~~~~~~~
+      |                                                   DistributedSyscall
+distributed_syscalls.h:58:51: error: unknown type name ‘syscall_callback_t’
+   58 |                                                   syscall_callback_t callback,
+      |                                                   ^~~~~~~~~~~~~~~~~~
+distributed_syscalls.h:86:61: error: unknown type name ‘syscall_result_t’; did you mean ‘SyscallRequest’?
+   86 | static int distributed_syscall_wait(async_syscall_t* async, syscall_result_t* result) {
+      |                                                             ^~~~~~~~~~~~~~~~
+      |                                                             SyscallRequest
+distributed_syscalls.h:117:5: error: unknown type name ‘syscall_args_t’
+  117 |     syscall_args_t* requests;
+      |     ^~~~~~~~~~~~~~
+distributed_syscalls.h:118:5: error: unknown type name ‘syscall_result_t’
+  118 |     syscall_result_t* results;
+      |     ^~~~~~~~~~~~~~~~
+distributed_syscalls.h: In function ‘distributed_syscall_batch’:
+distributed_syscalls.h:131:37: error: request for member ‘syscall_id’ in something not a structure or union
+  131 |         int idx = batch->requests[i].syscall_id - 1000;
+      |                                     ^
+distributed_syscalls.h:133:38: error: ‘syscall_table’ undeclared (first use in this function)
+  133 |         if (idx >= 0 && idx < sizeof(syscall_table) / sizeof(syscall_table[0]) &&
+      |                                      ^~~~~~~~~~~~~
+distributed_syscalls.h:138:30: error: request for member ‘error_code’ in something not a structure or union
+  138 |             batch->results[i].error_code = ENOSYS;
+      |                              ^
+distributed_syscalls.h:139:30: error: request for member ‘return_value’ in something not a structure or union
+  139 |             batch->results[i].return_value = -1;
+      |                              ^
+distributed_syscalls.h: At top level:
+distributed_syscalls.h:153:33: error: ‘SYS_MAX_SYSCALL’ undeclared here (not in a function)
+  153 |     _Atomic uint64_t call_count[SYS_MAX_SYSCALL - 1000];
+      |                                 ^~~~~~~~~~~~~~~
+distributed_syscalls.h:163:46: error: unknown type name ‘distributed_syscall_t’; did you mean ‘DistributedSyscall’?
+  163 | static int64_t distributed_syscall_monitored(distributed_syscall_t syscall_id, ...) {
+      |                                              ^~~~~~~~~~~~~~~~~~~~~
+      |                                              DistributedSyscall
+distributed_syscalls.h: In function ‘print_syscall_stats’:
+distributed_syscalls.h:246:26: error: ‘__atomic_load_ptr’ undeclared (first use in this function); did you mean ‘__atomic_load_n’?
+  246 |         uint64_t count = atomic_load(&g_syscall_stats.call_count[i]);
+      |                          ^~~~~~~~~~~
+distributed_syscalls.h:246:26: error: argument 1 of ‘__atomic_load’ must be a non-void pointer type
+  246 |         uint64_t count = atomic_load(&g_syscall_stats.call_count[i]);
+      |                          ^~~~~~~~~~~
+distributed_syscalls.h:264:13: error: ‘syscall_table’ undeclared (first use in this function); did you mean ‘syscall_stats_t’?
+  264 |         if (syscall_table[top5[i].idx].name) {
+      |             ^~~~~~~~~~~~~
+      |             syscall_stats_t
+distributed_syscalls.h: At top level:
+distributed_syscalls.h:283:41: error: unknown type name ‘distributed_syscall_t’; did you mean ‘DistributedSyscall’?
+  283 | static int validate_syscall_permissions(distributed_syscall_t syscall_id,
+      |                                         ^~~~~~~~~~~~~~~~~~~~~
+      |                                         DistributedSyscall
+distributed_syscalls.h: In function ‘init_distributed_syscalls’:
+distributed_syscalls.h:324:32: error: ‘syscall_table’ undeclared (first use in this function); did you mean ‘syscall_stats_t’?
+  324 |     for (int i = 0; i < sizeof(syscall_table) / sizeof(syscall_table[0]); i++) {
+      |                                ^~~~~~~~~~~~~
+      |                                syscall_stats_t
+distributed_syscalls.h: At top level:
+distributed_syscalls.h:350:2: error: #endif without #if
+  350 | #endif // DISTRIBUTED_SYSCALLS_H
+      |  ^~~~~
+main_complete.c: In function ‘demo_distributed_processes’:
+main_complete.c:67:19: warning: implicit declaration of function ‘dfork’; did you mean ‘vfork’? [-Wimplicit-function-declaration]
+   67 |     pid_t child = dfork(1);  // Fork en nodo 1
+      |                   ^~~~~
+      |                   vfork
+main_complete.c:74:9: warning: implicit declaration of function ‘dmigrate’ [-Wimplicit-function-declaration]
+   74 |     if (dmigrate(1, 2) == 0) {
+      |         ^~~~~~~~
+main_complete.c: In function ‘demo_distributed_filesystem’:
+main_complete.c:127:47: warning: comparison of integer expressions of different signedness: ‘size_t’ {aka ‘long unsigned int’} and ‘ssize_t’ {aka ‘long int’} [-Wsign-compare]
+  127 |         for (size_t i = 0; i < data_size && i < read_bytes; i++) {
+      |                                               ^
+main_complete.c:151:17: error: expected expression before ‘[’ token
+  151 |                 [](const char* name, uint64_t inode, dfs_file_type_t type) {
+      |                 ^
+main_complete.c:151:75: error: expected ‘)’ before ‘{’ token
+  151 |                 [](const char* name, uint64_t inode, dfs_file_type_t type) {
+      |                                                                           ^~
+      |                                                                           )
+main_complete.c:150:16: note: to match this ‘(’
+  150 |     dfs_readdir(g_filesystem->root,
+      |                ^
+main_complete.c:96:17: warning: unused variable ‘file3’ [-Wunused-variable]
+   96 |     dfs_file_t* file3 = dfs_create_file("/ml_models/model.pkl", 0644);
+      |                 ^~~~~
+main_complete.c:90:22: warning: unused variable ‘dir3’ [-Wunused-variable]
+   90 |     dfs_directory_t* dir3 = dfs_mkdir("/ml_models", 0755);
+      |                      ^~~~
+main_complete.c:89:22: warning: unused variable ‘dir2’ [-Wunused-variable]
+   89 |     dfs_directory_t* dir2 = dfs_mkdir("/data", 0755);
+      |                      ^~~~
+main_complete.c:88:22: warning: unused variable ‘dir1’ [-Wunused-variable]
+   88 |     dfs_directory_t* dir1 = dfs_mkdir("/home", 0755);
+      |                      ^~~~
+main_complete.c: In function ‘demo_distributed_memory’:
+main_complete.c:170:21: warning: unused variable ‘mem3’ [-Wunused-variable]
+  170 |     SharedMemory64* mem3 = create_shared_memory_mmap(100 * 1024 * 1024, 0);// 100MB
+      |                     ^~~~
+main_complete.c:169:21: warning: unused variable ‘mem2’ [-Wunused-variable]
+  169 |     SharedMemory64* mem2 = create_shared_memory_mmap(10 * 1024 * 1024, 0); // 10MB
+      |                     ^~~~
+main_complete.c: In function ‘demo_fault_tolerance’:
+main_complete.c:333:21: warning: implicit declaration of function ‘dcheckpoint’ [-Wimplicit-function-declaration]
+  333 |     int cp_result = dcheckpoint("checkpoint_demo", 0);
+      |                     ^~~~~~~~~~~
+main_complete.c: At top level:
+main_complete.c:379:5: error: redefinition of ‘main’
+  379 | int main(int argc, char* argv[]) {
+      |     ^~~~
+kernel_64bit.c:754:5: note: previous definition of ‘main’ with type ‘int(int,  char **)’
+  754 | int main(int argc, char* argv[]) {
+      |     ^~~~
+main_complete.c: In function ‘main’:
+main_complete.c:500:44: warning: format ‘%X’ expects argument of type ‘unsigned int’, but argument 2 has type ‘uint64_t’ {aka ‘long unsigned int’} [-Wformat=]
+  500 |                 printf("Kernel version: %04X\n", g_kernel->kernel_version);
+      |                                         ~~~^     ~~~~~~~~~~~~~~~~~~~~~~~~
+      |                                            |             |
+      |                                            unsigned int  uint64_t {aka long unsigned int}
+      |                                         %04lX
+distributed_syscalls.h: In function ‘dml_train’:
+distributed_syscalls.h:11:1: warning: control reaches end of non-void function [-Wreturn-type]
+   11 | }
+      | ^
+distributed_syscalls.h: At top level:
+distributed_syscalls.h:124:12: warning: ‘distributed_syscall_batch’ defined but not used [-Wunused-function]
+  124 | static int distributed_syscall_batch(batch_syscall_t* batch) {
+      |            ^~~~~~~~~~~~~~~~~~~~~~~~~
+distributed_syscalls.h:26:14: warning: ‘async_syscall_handler’ defined but not used [-Wunused-function]
+   26 | static void* async_syscall_handler(void* arg) {
+      |              ^~~~~~~~~~~~~~~~~~~~~
+dfs.h:220:15: warning: ‘compress_block’ defined but not used [-Wunused-function]
+  220 | static size_t compress_block(const void* src, size_t src_size, void* dst, size_t dst_size) {
+      |               ^~~~~~~~~~~~~~
+dfs.h:193:17: warning: ‘hash_string’ defined but not used [-Wunused-function]
+  193 | static uint64_t hash_string(const char* str) {
+      |                 ^~~~~~~~~~~
+make: *** [Makefile:59: bin/dos_64bit] Error 1
+
+╔═══════════════════════════════════════════════════════════╗
+║              ❌ ERROR EN COMPILACIÓN ❌                    ║
+╚═══════════════════════════════════════════════════════════╝
+
+Revisa los errores arriba y corrige los problemas.
+
