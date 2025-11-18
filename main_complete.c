@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <sys/wait.h>
 #include "kernel_64bit.c"
 #include "dfs.h"
