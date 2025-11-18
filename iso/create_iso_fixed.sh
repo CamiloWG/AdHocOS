@@ -12,6 +12,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+OUTPUT_DIR="Iso"
+
+# Crear carpeta de salida si no existe
+mkdir -p "$OUTPUT_DIR"
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     Creador de ISO CORREGIDO - SO Descentralizado         ║${NC}"
@@ -458,4 +462,10 @@ echo "   - Revisa los logs con el serial port"
 echo "   - Prueba el modo Verbose del GRUB"
 echo "   - Verifica: cat /var/log/vbox.log"
 echo ""
+
+# Mover carpetas completas
+mv iso_root "$OUTPUT_DIR"/ 2>/dev/null || true
+mv initramfs "$OUTPUT_DIR"/ 2>/dev/null || true
+
+
 echo -e "${GREEN}¡Ahora debería funcionar correctamente!${NC}"
