@@ -448,7 +448,7 @@ void discover_nodes() {
     
     // Simulación: agregar nodos de prueba
     for (int i = 0; i < 3; i++) {
-        if (i != g_kernel->node_id) {
+        if ((node_id_t)i != g_kernel->node_id) {
             Node new_node = {0};
             new_node.node_id = i;
             sprintf(new_node.ip_address, "192.168.1.%d", 100 + i);
