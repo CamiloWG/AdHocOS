@@ -12,6 +12,11 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+OUTPUT_DIR="Iso"
+
+# Crear carpeta de salida si no existe
+mkdir -p "$OUTPUT_DIR"
+
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║         Creador de ISO - SO Descentralizado               ║${NC}"
@@ -461,5 +466,19 @@ echo ""
 echo "Para detener: sudo killall qemu-system-x86_64"
 EOF
 chmod +x test_network_vms.sh
+
+echo -e "${YELLOW}Moviendo archivos generados a carpeta $OUTPUT_DIR...${NC}"
+
+mv decentralized_os "$OUTPUT_DIR"/ 2>/dev/null || true
+mv initramfs.cpio.gz "$OUTPUT_DIR"/ 2>/dev/null || true
+mv vmlinuz "$OUTPUT_DIR"/ 2>/dev/null || true
+mv decentralized_os.iso "$OUTPUT_DIR"/ 2>/dev/null || true
+mv create_usb.sh "$OUTPUT_DIR"/ 2>/dev/null || true
+mv test_network_vms.sh "$OUTPUT_DIR"/ 2>/dev/null || true
+
+# Mover carpetas completas
+mv iso_root "$OUTPUT_DIR"/ 2>/dev/null || true
+mv initramfs "$OUTPUT_DIR"/ 2>/dev/null || true
+
 
 echo -e "${GREEN}¡Sistema listo para usar en red real!${NC}"
