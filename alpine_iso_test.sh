@@ -148,10 +148,6 @@ sudo xorriso -as mkisofs \
   -boot-load-size 4 \
   -boot-info-table \
   \
-  -eltorito-alt-boot \
-  -e boot/x86_64/efi.img \
-  -no-emul-boot \
-  \
   "$CUSTOMDIR"
 
 echo -e "${GREEN}=== ISO GENERADA EXITOSAMENTE: ${ISO_NAME} ===${NC}"
