@@ -24,7 +24,7 @@ WORKDIR="adhoc_build"
 MOUNTDIR="${WORKDIR}/mount"
 CUSTOMDIR="${WORKDIR}/custom"
 
-BIN_NAME="decentralized_os"
+BIN_NAME="decentralized_os_static"
 BIN_PATH="./${BIN_NAME}"   # <-- Binario compilado desde tu proyecto
 
 SERVICE_NAME="adhocd"
