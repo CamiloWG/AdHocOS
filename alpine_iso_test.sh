@@ -170,7 +170,7 @@ EOF
 echo -e "  ${GREEN}✓ Documentación agregada${NC}"
 
 # ======================================================================
-# 9. Generar ISO booteable (BIOS + UEFI)
+# 9. Generar ISO booteable (SOLO BIOS — Alpine Standard no trae UEFI)
 # ======================================================================
 
 echo -e "\n${YELLOW}[8/10] Generando ISO booteable...${NC}"
@@ -180,17 +180,15 @@ sudo xorriso -as mkisofs \
   -full-iso9660-filenames \
   -volid "ADHOCOS" \
   -eltorito-boot boot/syslinux/isolinux.bin \
-  -eltorito-catalog boot/catalog.c32 \
+  -eltorito-catalog boot/syslinux/boot.cat \
   -no-emul-boot \
   -boot-load-size 4 \
   -boot-info-table \
-  -eltorito-alt-boot \
-  -e boot/efi.img \
-  -no-emul-boot \
-  -o "$OUTPUT_ISO" \
+  -output "$OUTPUT_ISO" \
   alpine_custom/
 
 echo -e "  ${GREEN}✓ ISO generada → $OUTPUT_ISO${NC}"
+
 
 # ======================================================================
 # 10. Limpieza final
