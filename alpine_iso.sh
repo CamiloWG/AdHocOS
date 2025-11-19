@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # ========================================
-# Script COMPLETO para crear ISO del SO Descentralizado
-# Sobre Alpine Linux para VirtualBox
+# Script CORREGIDO para crear ISO del SO Descentralizado
+# Maneja correctamente Alpine Linux OpenRC
 # ========================================
 
 set -e
@@ -17,14 +17,14 @@ NC='\033[0m'
 ALPINE_VERSION="3.18"
 ALPINE_ISO="alpine-standard-${ALPINE_VERSION}.0-x86_64.iso"
 ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/x86_64/${ALPINE_ISO}"
-OUTPUT_ISO="alpine_adhoc.iso"
+OUTPUT_ISO="dos_virtualbox.iso"
 
 echo -e "${CYAN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
 ║   GENERADOR DE ISO - SISTEMA OPERATIVO DESCENTRALIZADO   ║
-║   Para VirtualBox con Red Ad hoc                         ║
+║   Para VirtualBox con Red Ad hoc (CORREGIDO)            ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 EOF
@@ -67,7 +67,7 @@ echo -e "${GREEN}  ✓ Todas las dependencias presentes${NC}\n"
 echo -e "${YELLOW}[2/10]${NC} Descargando Alpine Linux base..."
 
 if [ ! -f "$ALPINE_ISO" ]; then
-    echo "  Descargando $ALPINE_ISO (puede tardar algunos minutos)..."
+    echo "  Descargando $ALPINE_ISO..."
     wget -q --show-progress "$ALPINE_URL" || {
         echo -e "${RED}Error descargando Alpine${NC}"
         exit 1
@@ -85,14 +85,12 @@ echo ""
 
 echo -e "${YELLOW}[3/10]${NC} Compilando Sistema Operativo Descentralizado..."
 
-# Verificar que existe el código fuente
 if [ ! -f "src/main_alpine.c" ]; then
     echo -e "${RED}Error: No se encuentra src/main_alpine.c${NC}"
     echo "Asegúrate de estar en el directorio correcto"
     exit 1
 fi
 
-# Compilar
 echo "  Compilando con optimizaciones..."
 gcc -Wall -Wextra -O2 -pthread \
     -o dos_system \
@@ -107,7 +105,7 @@ echo "    Tamaño: $(du -h dos_system | cut -f1)"
 echo ""
 
 # ========================================
-# PASO 4: EXTRAER ALPINE
+# PASO 4: EXTRAER ALPINE (CORREGIDO)
 # ========================================
 
 echo -e "${YELLOW}[4/10]${NC} Extrayendo Alpine Linux..."
@@ -117,17 +115,35 @@ sudo rm -rf alpine_mount alpine_custom 2>/dev/null || true
 
 mkdir -p alpine_mount alpine_custom
 
-sudo mount -o loop "$ALPINE_ISO" alpine_mount
-echo "  Copiando archivos..."
-sudo cp -a alpine_mount/* alpine_custom/
+echo "  Montando ISO..."
+sudo mount -o loop "$ALPINE_ISO" alpine_mount || {
+    echo -e "${RED}Error montando ISO${NC}"
+    exit 1
+}
+
+echo "  Copiando archivos (esto puede tardar)..."
+sudo cp -a alpine_mount/* alpine_custom/ || {
+    echo -e "${RED}Error copiando archivos${NC}"
+    sudo umount alpine_mount 2>/dev/null
+    exit 1
+}
+
 sudo chmod -R u+w alpine_custom/
+
 sudo umount alpine_mount
 rmdir alpine_mount
 
-echo -e "${GREEN}  ✓ Alpine extraído${NC}\n"
+# VERIFICAR estructura de Alpine
+echo "  Verificando estructura de Alpine..."
+if [ ! -d "alpine_custom/boot" ]; then
+    echo -e "${RED}Error: Estructura de Alpine inválida${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}  ✓ Alpine extraído correctamente${NC}\n"
 
 # ========================================
-# PASO 5: PERSONALIZAR ALPINE
+# PASO 5: PERSONALIZAR ALPINE (CORREGIDO)
 # ========================================
 
 echo -e "${YELLOW}[5/10]${NC} Personalizando Alpine Linux..."
@@ -150,21 +166,23 @@ ip link set lo up
 ip addr add 127.0.0.1/8 dev lo
 
 # Buscar y configurar todas las interfaces ethernet
-for iface in $(ls /sys/class/net/ | grep -E '^eth|^enp'); do
-    echo "  Configurando $iface..."
-    ip link set $iface up
-    
-    # Intentar DHCP primero
-    timeout 5 udhcpc -i $iface -n -q 2>/dev/null || {
-        # Si DHCP falla, asignar IP estática
-        ip addr add 192.168.100.$((RANDOM % 200 + 10))/24 dev $iface
-    }
+for iface in $(ls /sys/class/net/ 2>/dev/null | grep -E '^eth|^enp' || echo ""); do
+    if [ -n "$iface" ]; then
+        echo "  Configurando $iface..."
+        ip link set $iface up 2>/dev/null
+        
+        # Intentar DHCP primero
+        timeout 5 udhcpc -i $iface -n -q 2>/dev/null || {
+            # Si DHCP falla, asignar IP estática
+            ip addr add 192.168.100.$((RANDOM % 200 + 10))/24 dev $iface 2>/dev/null
+        }
+    fi
 done
 
 echo "[NETWORK] Configuración de red completada"
 echo ""
 echo "Interfaces activas:"
-ip addr show | grep -E "^[0-9]+:|inet " | grep -v "inet 127"
+ip addr show 2>/dev/null | grep -E "^[0-9]+:|inet " | grep -v "inet 127" || echo "  (verificando...)"
 echo ""
 EOFNET
 
@@ -225,17 +243,70 @@ EOFSTART
 
 sudo chmod +x alpine_custom/dos/bin/start_dos.sh
 
-# Crear configuración de auto-inicio
-echo "  Configurando auto-inicio..."
+# ========================================
+# CONFIGURAR AUTO-INICIO (MÉTODO CORRECTO PARA ALPINE)
+# ========================================
 
-# Modificar inittab para auto-inicio
-sudo tee -a alpine_custom/etc/inittab > /dev/null << 'EOFINIT'
+echo "  Configurando auto-inicio con OpenRC..."
+
+# Crear servicio OpenRC en lugar de modificar inittab
+sudo mkdir -p alpine_custom/etc/init.d
+sudo mkdir -p alpine_custom/etc/runlevels/default
+
+sudo tee alpine_custom/etc/init.d/dos > /dev/null << 'EOFINIT'
+#!/sbin/openrc-run
+
+name="Sistema Operativo Descentralizado"
+description="Sistema Operativo Descentralizado para redes Ad hoc"
+command="/dos/bin/start_dos.sh"
+command_background="no"
+pidfile="/run/dos.pid"
+
+depend() {
+    need net localmount
+    after firewall
+}
+
+start_pre() {
+    # Asegurar que los directorios existen
+    checkpath --directory --mode 0755 /dos/logs
+}
+EOFINIT
+
+sudo chmod +x alpine_custom/etc/init.d/dos
+
+# ALTERNATIVA: Usar /etc/local.d/ (más simple y compatible)
+echo "  Configurando inicio automático con local.d..."
+
+sudo mkdir -p alpine_custom/etc/local.d
+
+sudo tee alpine_custom/etc/local.d/dos.start > /dev/null << 'EOFLOCAL'
+#!/bin/sh
+# Auto-inicio del Sistema Operativo Descentralizado
+
+# Esperar a que la red esté lista
+sleep 3
+
+# Iniciar en background si queremos que continue el boot
+# O en foreground si queremos que tome control
+/dos/bin/start_dos.sh &
+EOFLOCAL
+
+sudo chmod +x alpine_custom/etc/local.d/dos.start
+
+# ALTERNATIVA 2: Modificar /etc/inittab SOLO SI EXISTE
+if [ -f "alpine_custom/etc/inittab" ]; then
+    echo "  Modificando inittab existente..."
+    sudo tee -a alpine_custom/etc/inittab > /dev/null << 'EOFINIT2'
 
 # Sistema Operativo Descentralizado
 dos::respawn:/dos/bin/start_dos.sh
-EOFINIT
+EOFINIT2
+else
+    echo "  (inittab no existe, usando local.d)"
+fi
 
-# Crear archivo de configuración
+# Crear configuración
 sudo tee alpine_custom/dos/config/dos.conf > /dev/null << 'EOFCONFIG'
 # Configuración del Sistema Operativo Descentralizado
 
@@ -266,7 +337,7 @@ LOG_LEVEL=INFO
 LOG_FILE=/dos/logs/system.log
 EOFCONFIG
 
-echo -e "${GREEN}  ✓ Alpine personalizado${NC}\n"
+echo -e "${GREEN}  ✓ Alpine personalizado correctamente${NC}\n"
 
 # ========================================
 # PASO 6: DOCUMENTACIÓN
@@ -301,16 +372,10 @@ Para que funcione la red Ad hoc:
    - Attached to: Bridged Adapter
    - Name: (Tu interfaz de red física)
    
-   ✅ Los nodos en diferentes VMs se verán
-   ✅ Pueden estar en diferentes PCs
-
 2. MODO RED INTERNA (Para pruebas locales):
    VM → Settings → Network → Adapter 1
    - Attached to: Internal Network
    - Name: dos_network (mismo en todas las VMs)
-   
-   ✅ VMs en el mismo host se verán
-   ❌ No saldrán a internet
 
 3. NO USAR NAT - Los nodos no se verán entre sí
 
@@ -318,51 +383,20 @@ PUERTOS UTILIZADOS:
 - 8888/UDP: Descubrimiento de nodos (Broadcast)
 - 8889/TCP: Transferencia de datos entre nodos
 
-ARQUITECTURA:
-┌─────────────────────────────────────┐
-│  Sistema Operativo Descentralizado  │
-│  - Scheduler distribuido            │
-│  - Memoria compartida               │
-│  - Sincronización                   │
-│  - Tolerancia a fallos              │
-├─────────────────────────────────────┤
-│  Alpine Linux 3.18 (Base)           │
-│  - Kernel Linux                     │
-│  - Red TCP/IP                       │
-│  - Herramientas básicas             │
-└─────────────────────────────────────┘
-
-PRUEBA CON MÚLTIPLES NODOS:
-1. Crea 2-3 VMs con esta misma ISO
-2. Configura todas en Bridge o Red Interna
-3. Iníc ialas simultáneamente
-4. Usa 'nodes' para ver cuándo se descubren
-5. Usa 'task' para distribuir trabajo
-
 SOLUCIÓN DE PROBLEMAS:
-- Si no aparece GRUB: Verifica orden de arranque (CD primero)
-- Si pantalla negra: Espera 30 seg o selecciona modo Verbose
+- Si no aparece el sistema: Espera 30 segundos
 - Si no ve otros nodos: Verifica configuración de red
 - Si firewall bloquea: Ejecuta en Alpine:
     iptables -F
     iptables -P INPUT ACCEPT
 
 ACCESO MANUAL (Si necesario):
-- Usuario: root (sin contraseña en live)
-- Para iniciar manualmente: /dos/bin/start_dos.sh
-- Ver logs: dmesg | tail
-
-CARACTERÍSTICAS:
-✅ Descubrimiento automático de nodos
-✅ Scheduler inteligente con balanceo de carga
-✅ Memoria compartida distribuida
-✅ Tolerancia a fallos con recuperación automática
-✅ Interfaz de comandos interactiva
-✅ Soporte para aplicaciones de Machine Learning
+- Usuario: root (sin contraseña)
+- Iniciar manualmente: /dos/bin/start_dos.sh
+- Ver logs: dmesg | tail -50
 
 ═══════════════════════════════════════════════════════════
 Sistema desarrollado para redes Ad hoc
-Más información: Ver documentación del proyecto
 ═══════════════════════════════════════════════════════════
 EOFREADME
 
@@ -373,6 +407,13 @@ echo -e "${GREEN}  ✓ Documentación creada${NC}\n"
 # ========================================
 
 echo -e "${YELLOW}[7/10]${NC} Generando imagen ISO..."
+
+# Verificar que GRUB existe
+if [ ! -d "alpine_custom/boot/grub" ]; then
+    echo -e "${RED}Error: No se encuentra boot/grub en Alpine${NC}"
+    echo "La ISO de Alpine puede estar corrupta"
+    exit 1
+fi
 
 sudo xorriso -as mkisofs \
     -iso-level 3 \
@@ -393,16 +434,13 @@ SIZE=$(du -h "$OUTPUT_ISO" | cut -f1)
 echo -e "${GREEN}  ✓ ISO creada: $OUTPUT_ISO ($SIZE)${NC}\n"
 
 # ========================================
-# PASO 8: CREAR SCRIPTS DE VIRTUALBOX
+# PASO 8: SCRIPTS DE VIRTUALBOX
 # ========================================
 
 echo -e "${YELLOW}[8/10]${NC} Creando scripts para VirtualBox..."
 
-# Script para crear VM automáticamente
 cat > create_vm_vbox.sh << 'EOFVM'
 #!/bin/bash
-
-# Script para crear VM de VirtualBox automáticamente
 
 VM_NAME="DOS_Node_$1"
 ISO="dos_virtualbox.iso"
@@ -420,10 +458,8 @@ fi
 
 echo "Creando VM: $VM_NAME"
 
-# Crear VM
 VBoxManage createvm --name "$VM_NAME" --ostype Linux_64 --register
 
-# Configurar sistema
 VBoxManage modifyvm "$VM_NAME" \
     --memory 1024 \
     --cpus 2 \
@@ -435,15 +471,12 @@ VBoxManage modifyvm "$VM_NAME" \
     --audio none \
     --usb off
 
-# Configurar red (Bridge - para red real)
 VBoxManage modifyvm "$VM_NAME" \
     --nic1 bridged \
     --bridgeadapter1 "$(VBoxManage list bridgedifs | grep ^Name | head -1 | cut -d: -f2 | xargs)"
 
-# Crear controlador de almacenamiento
 VBoxManage storagectl "$VM_NAME" --name "IDE" --add ide
 
-# Montar ISO
 VBoxManage storageattach "$VM_NAME" \
     --storagectl "IDE" \
     --port 0 \
@@ -455,17 +488,12 @@ echo "✅ VM '$VM_NAME' creada"
 echo ""
 echo "Para iniciar:"
 echo "  VBoxManage startvm '$VM_NAME' --type gui"
-echo ""
-echo "O desde la interfaz gráfica de VirtualBox"
 EOFVM
 
 chmod +x create_vm_vbox.sh
 
-# Script para iniciar cluster
 cat > start_cluster_vbox.sh << 'EOFCLUSTER'
 #!/bin/bash
-
-# Iniciar cluster de 3 nodos
 
 echo "Creando cluster de 3 nodos..."
 echo ""
@@ -486,14 +514,11 @@ done
 
 echo ""
 echo "✅ Cluster iniciado"
-echo ""
 echo "Espera ~30 segundos para que los nodos se descubran"
-echo "Usa 'nodes' en cada VM para ver la red"
 EOFCLUSTER
 
 chmod +x start_cluster_vbox.sh
 
-# Script para detener cluster
 cat > stop_cluster_vbox.sh << 'EOFSTOP'
 #!/bin/bash
 
@@ -515,358 +540,79 @@ chmod +x stop_cluster_vbox.sh
 echo -e "${GREEN}  ✓ Scripts de VirtualBox creados${NC}\n"
 
 # ========================================
-# PASO 9: GUÍA DE CONFIGURACIÓN
+# PASO 9: GUÍA
 # ========================================
 
-echo -e "${YELLOW}[9/10]${NC} Creando guía de configuración..."
+echo -e "${YELLOW}[9/10]${NC} Creando guía de uso..."
 
-cat > GUIA_VIRTUALBOX.md << 'EOFGUIA'
-# Guía Completa para VirtualBox
+cat > GUIA_RAPIDA.txt << 'EOFGUIA'
+═══════════════════════════════════════════════════════════
+GUÍA RÁPIDA - SISTEMA OPERATIVO DESCENTRALIZADO
+═══════════════════════════════════════════════════════════
 
-## 🚀 INICIO RÁPIDO (Automático)
+🚀 INICIO RÁPIDO:
 
-### Opción 1: Crear VM Automáticamente
+1. Crear VMs automáticamente:
+   ./start_cluster_vbox.sh
 
-```bash
-# Crear una VM
-./create_vm_vbox.sh 1
+2. O crear manualmente:
+   ./create_vm_vbox.sh 1
+   VBoxManage startvm DOS_Node_1 --type gui
 
-# Iniciar cluster completo (3 VMs)
-./start_cluster_vbox.sh
-
-# Detener cluster
-./stop_cluster_vbox.sh
-```
-
----
-
-## 🔧 CONFIGURACIÓN MANUAL
-
-### Paso 1: Crear Nueva Máquina Virtual
-
-1. Abrir VirtualBox
-2. Click en "Nueva" (New)
-3. Configurar:
-   - **Nombre**: DOS_Node_1
-   - **Tipo**: Linux
-   - **Versión**: Other Linux (64-bit)
-   - Click "Siguiente"
-
-### Paso 2: Memoria RAM
-
-- **Mínimo**: 512 MB
-- **Recomendado**: 1024 MB (1 GB)
-- Para pruebas con múltiples VMs: 768 MB por VM
-
-### Paso 3: Disco Duro
-
-- Seleccionar: **No agregar disco duro virtual**
-- (Bootearemos directamente desde ISO)
-
-### Paso 4: Configurar Sistema
-
-1. Click derecho en la VM → **Configuración**
-2. **Sistema** → **Placa Base**:
-   - ✅ Habilitar I/O APIC
-   - Orden de arranque: **Óptica** primero
-3. **Sistema** → **Procesador**:
-   - CPUs: **2** (recomendado)
-   - ✅ Habilitar PAE/NX
-
-### Paso 5: Configurar Pantalla
-
-- **Pantalla** → **Pantalla**:
-  - Memoria de vídeo: **16 MB**
-  - Controlador gráfico: **VMSVGA**
-  - ❌ NO habilitar aceleración 3D
-
-### Paso 6: Configurar Red ⚠️ MUY IMPORTANTE
-
-**Para Red Ad hoc entre VMs en el MISMO HOST:**
-
-1. **Red** → **Adaptador 1**:
-   - ✅ Habilitar adaptador de red
-   - **Conectado a**: Red interna (Internal Network)
-   - **Nombre**: `dos_network` (mismo nombre en todas las VMs)
-
-**Para Red Ad hoc entre VMs en DIFERENTES HOSTS:**
-
-1. **Red** → **Adaptador 1**:
-   - ✅ Habilitar adaptador de red
-   - **Conectado a**: Adaptador puente (Bridged Adapter)
-   - **Nombre**: Tu interfaz de red física (eth0, wlan0, etc.)
-
-### Paso 7: Montar ISO
-
-1. **Almacenamiento** → **Controlador: IDE**
-2. Click en el icono del disco (vacío)
-3. Click en el icono del disco azul (derecha)
-4. **Choose a disk file...** → Seleccionar `dos_virtualbox.iso`
-
-### Paso 8: Iniciar VM
-
-1. Seleccionar la VM
-2. Click en **Iniciar**
 3. Esperar ~30 segundos mientras carga
-4. Deberías ver el menú de comandos del SO
 
----
+4. Usar comandos:
+   > status  (ver estado)
+   > nodes   (ver nodos conectados)
+   > task Mi tarea  (crear tarea)
+   > tasks   (ver todas las tareas)
 
-## 🌐 CONFIGURACIÓN DE RED DETALLADA
+═══════════════════════════════════════════════════════════
 
-### Modo 1: Red Interna (VMs en mismo PC)
+⚠️ IMPORTANTE - CONFIGURACIÓN DE RED:
 
-```
-┌────────────────────────────────────────┐
-│  Host (Tu PC)                          │
-│  ┌──────────┐  ┌──────────┐           │
-│  │  VM 1    │  │  VM 2    │           │
-│  │  ┌────┐  │  │  ┌────┐  │           │
-│  │  │dos │←─┼──┼→ │dos │  │           │
-│  │  └────┘  │  │  └────┘  │           │
-│  └──────────┘  └──────────┘           │
-└────────────────────────────────────────┘
-   ↓ Red Interna "dos_network"
-   ✅ Se ven entre sí
-   ❌ Sin acceso a internet
-```
+VirtualBox → VM → Settings → Network
 
-**Configuración:**
-- Network → Adapter 1 → Internal Network
-- Name: `dos_network` (MISMO en todas)
+OPCIÓN A - Red entre VMs en mismo PC:
+  • Attached to: Internal Network
+  • Name: dos_network (MISMO en todas las VMs)
 
-### Modo 2: Adaptador Puente (Red real)
+OPCIÓN B - Red real (VMs en diferentes PCs):
+  • Attached to: Bridged Adapter
+  • Name: Tu interfaz de red (eth0, wlan0, etc.)
 
-```
-Internet
-   ↓
-Router (192.168.1.1)
-   ├── PC 1 (192.168.1.10)
-   │     └── VM 1 (192.168.1.100)
-   │
-   ├── PC 2 (192.168.1.11)
-   │     └── VM 2 (192.168.1.101)
-   │
-   └── PC 3 (192.168.1.12)
-         └── VM 3 (192.168.1.102)
-         
-✅ Todas las VMs se ven entre sí
-✅ Incluso en diferentes PCs
-✅ Tienen acceso a internet
-```
+❌ NO USAR NAT (no funciona para Ad hoc)
 
-**Configuración:**
-- Network → Adapter 1 → Bridged Adapter
-- Name: Tu interfaz física (eth0, wlan0, enp0s3...)
+═══════════════════════════════════════════════════════════
 
-### ❌ NO USAR NAT
+📝 PRUEBA DE FUNCIONAMIENTO:
 
-Si usas NAT, las VMs NO SE VERÁN entre sí.
-
----
-
-## 📋 CREAR CLUSTER DE 3 NODOS
-
-### Método Manual:
-
-1. Crear 3 VMs siguiendo los pasos anteriores
-2. Nombrarlas: DOS_Node_1, DOS_Node_2, DOS_Node_3
-3. IMPORTANTE: Misma configuración de red en todas
-4. Montar la MISMA ISO en todas
-5. Iniciar las 3 VMs
-
-### Método Automático:
-
-```bash
-./start_cluster_vbox.sh
-```
-
-### Verificar Red:
-
-En cada VM, ejecuta:
-```
+En VM 1:
 > nodes
-```
-
-Deberías ver los otros 2 nodos listados.
-
----
-
-## 🐛 SOLUCIÓN DE PROBLEMAS
-
-### Problema: Pantalla negra
-
-**Solución:**
-1. Espera 30 segundos (puede estar cargando)
-2. Presiona Enter varias veces
-3. En GRUB, selecciona "Modo Verbose"
-4. Verifica que la ISO esté montada correctamente
-
-### Problema: "No booteable device"
-
-**Solución:**
-1. Configuración → Sistema → Orden de arranque
-2. Óptica DEBE estar primero
-3. Verificar que la ISO está montada en Almacenamiento
-
-### Problema: No detecta otros nodos
-
-**Solución:**
-1. Verifica que TODAS las VMs usan la misma configuración de red
-2. Si Red Interna: MISMO nombre de red en todas
-3. Si Bridge: Verifica firewall del host
-4. Espera 15-20 segundos para descubrimiento
-5. Ejecuta `status` para ver estado de red
-
-### Problema: "VT-x is disabled"
-
-**Solución:**
-1. Reinicia el PC
-2. Entra a BIOS/UEFI (F2, F10, o DEL al inicio)
-3. Busca "Virtualization" o "Intel VT-x" o "AMD-V"
-4. Habilitarlo
-5. Guardar y reiniciar
-
-### Problema: VM muy lenta
-
-**Solución:**
-1. Aumentar RAM a 1024 MB
-2. Habilitar VT-x/AMD-V en BIOS
-3. Sistema → Aceleración → Habilitar VT-x/AMD-V
-4. Cerrar otras aplicaciones
-
----
-
-## 📊 COMANDOS DEL SISTEMA
-
-Una vez dentro del sistema:
-
-```bash
-# Ver estado completo
-> status
-
-# Ver nodos activos
+(esperar 10-15 segundos)
 > nodes
+(deberías ver VM 2 y VM 3)
 
-# Crear tarea distribuida
-> task Procesar dataset grande
+En VM 2:
+> task Prueba desde VM2
 
-# Ver todas las tareas
+En VM 1:
 > tasks
+(deberías ver la tarea de VM 2)
 
-# Ayuda
-> help
+═══════════════════════════════════════════════════════════
 
-# Salir
-> exit
-```
+🐛 SOLUCIÓN DE PROBLEMAS:
 
----
+• Pantalla negra: Espera 30 segundos
+• No ve otros nodos: Verifica configuración de red
+• ISO no bootea: Verifica orden de arranque (CD primero)
+• VM lenta: Aumenta RAM a 1024 MB
 
-## 🎯 PRUEBA COMPLETA DE RED AD HOC
-
-### Escenario: 3 VMs en el mismo PC
-
-1. **Preparación:**
-```bash
-# Crear las VMs automáticamente
-./create_vm_vbox.sh 1
-./create_vm_vbox.sh 2
-./create_vm_vbox.sh 3
-```
-
-2. **Iniciar:**
-```bash
-./start_cluster_vbox.sh
-```
-
-3. **Verificar en VM 1:**
-```
-> status
-# Debería mostrar 2 nodos activos
-
-> nodes
-# Lista: Node 2 y Node 3
-```
-
-4. **Crear tarea en VM 1:**
-```
-> task Calcular fibonacci 1000000
-# La tarea se asignará al nodo con menor carga
-```
-
-5. **Ver en VM 2:**
-```
-> tasks
-# Debería ver la tarea creada en VM 1
-```
-
-**Resultado Esperado:**
-- ✅ Las 3 VMs se ven entre sí en ~15 segundos
-- ✅ Puedes crear tareas desde cualquier nodo
-- ✅ Las tareas se distribuyen inteligentemente
-
----
-
-## 📚 INFORMACIÓN ADICIONAL
-
-### Puertos Utilizados:
-- **8888/UDP**: Descubrimiento de nodos (broadcast)
-- **8889/TCP**: Transferencia de datos
-
-### Requisitos del Sistema (por VM):
-- **RAM**: Mínimo 512 MB, recomendado 1 GB
-- **CPU**: 1 core (mínimo), 2 cores (recomendado)
-- **Disco**: No necesario (live boot)
-- **Red**: Ethernet virtual
-
-### Arquitectura:
-```
-┌─────────────────────────────────┐
-│ Tu Sistema Operativo           │  ← Tu código
-│ Descentralizado                 │
-├─────────────────────────────────┤
-│ Alpine Linux 3.18               │  ← Sistema base
-│ (Kernel + Drivers + Red)        │
-└─────────────────────────────────┘
-```
-
-### Logs y Debug:
-Si necesitas debugging:
-1. En Alpine: `dmesg | tail -50`
-2. Ver configuración de red: `ip addr`
-3. Probar conectividad: `ping <IP_otro_nodo>`
-
----
-
-## ✅ CHECKLIST
-
-Antes de iniciar, verifica:
-
-- [ ] VirtualBox instalado y actualizado
-- [ ] ISO descargada: `dos_virtualbox.iso`
-- [ ] VMs creadas con configuración correcta
-- [ ] Red configurada (Internal o Bridge)
-- [ ] ISO montada en cada VM
-- [ ] Orden de arranque: CD/DVD primero
-- [ ] Suficiente RAM asignada (1 GB)
-
----
-
-## 🎓 Para el Proyecto
-
-Este sistema implementa:
-- ✅ Descubrimiento automático de nodos (Ad hoc)
-- ✅ Scheduler distribuido con balanceo de carga
-- ✅ Gestión de memoria compartida
-- ✅ Sincronización entre procesos distribuidos
-- ✅ Tolerancia a fallos con recuperación
-- ✅ Interfaz de comandos interactiva
-
-**Listo para demostración y pruebas en red real.**
+═══════════════════════════════════════════════════════════
 EOFGUIA
 
-echo -e "${GREEN}  ✓ Guía completa creada: GUIA_VIRTUALBOX.md${NC}\n"
+echo -e "${GREEN}  ✓ Guía creada${NC}\n"
 
 # ========================================
 # PASO 10: LIMPIEZA
@@ -879,13 +625,13 @@ sudo rm -rf alpine_custom alpine_mount 2>/dev/null || true
 echo -e "${GREEN}  ✓ Limpieza completada${NC}\n"
 
 # ========================================
-# RESUMEN FINAL
+# RESUMEN
 # ========================================
 
 echo -e "${GREEN}"
 cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════╗
-║                  ✅ GENERACIÓN COMPLETA                   ║
+║              ✅ GENERACIÓN COMPLETA                       ║
 ╚═══════════════════════════════════════════════════════════╝
 EOF
 echo -e "${NC}"
@@ -893,35 +639,20 @@ echo -e "${NC}"
 echo -e "${BLUE}📦 Archivos generados:${NC}"
 echo ""
 echo "  📀 $OUTPUT_ISO ($SIZE)"
-echo "     └─ ISO booteable lista para VirtualBox"
+echo "  📜 create_vm_vbox.sh"
+echo "  📜 start_cluster_vbox.sh"
+echo "  📜 stop_cluster_vbox.sh"
+echo "  📖 GUIA_RAPIDA.txt"
 echo ""
-echo "  📜 Scripts de VirtualBox:"
-echo "     ├─ create_vm_vbox.sh    (Crear VM individual)"
-echo "     ├─ start_cluster_vbox.sh (Iniciar 3 VMs)"
-echo "     └─ stop_cluster_vbox.sh  (Detener cluster)"
-echo ""
-echo "  📖 Documentación:"
-echo "     ├─ GUIA_VIRTUALBOX.md    (Guía paso a paso)"
-echo "     └─ README_DOS.txt         (En la ISO)"
-echo ""
-
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${YELLOW}🚀 PRÓXIMOS PASOS:${NC}"
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
-echo "OPCIÓN 1: Crear y probar cluster (Automático)"
-echo -e "  ${GREEN}./start_cluster_vbox.sh${NC}"
+echo "1. Crear y probar cluster:"
+echo -e "   ${GREEN}./start_cluster_vbox.sh${NC}"
 echo ""
-echo "OPCIÓN 2: Crear VM individual"
-echo -e "  ${GREEN}./create_vm_vbox.sh 1${NC}"
-echo -e "  ${GREEN}VBoxManage startvm DOS_Node_1 --type gui${NC}"
+echo "2. Ver guía rápida:"
+echo -e "   ${GREEN}cat GUIA_RAPIDA.txt${NC}"
 echo ""
-echo "OPCIÓN 3: Manual completo"
-echo -e "  ${GREEN}less GUIA_VIRTUALBOX.md${NC}"
-echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo -e "${GREEN}✨ Sistema listo para demostración en VirtualBox${NC}"
-echo -e "${GREEN}✨ Red Ad hoc funcional${NC}"
-echo -e "${GREEN}✨ Descubrimiento automático de nodos${NC}"
+echo -e "${GREEN}✨ Sistema listo para VirtualBox${NC}"
 echo ""
