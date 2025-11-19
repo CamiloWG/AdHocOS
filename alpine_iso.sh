@@ -2,7 +2,7 @@
 
 # ========================================
 # Script CORREGIDO para crear ISO del SO Descentralizado
-# Maneja correctamente Alpine Linux OpenRC
+# Soluciona el problema de boot con Alpine Linux
 # ========================================
 
 set -e
@@ -24,7 +24,7 @@ cat << 'EOF'
 ╔═══════════════════════════════════════════════════════════╗
 ║                                                           ║
 ║   GENERADOR DE ISO - SISTEMA OPERATIVO DESCENTRALIZADO   ║
-║   Para VirtualBox con Red Ad hoc (CORREGIDO)            ║
+║   Versión CORREGIDA para VirtualBox                      ║
 ║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
 EOF
@@ -34,7 +34,7 @@ echo -e "${NC}\n"
 # PASO 1: VERIFICAR DEPENDENCIAS
 # ========================================
 
-echo -e "${YELLOW}[1/10]${NC} Verificando dependencias..."
+echo -e "${YELLOW}[1/9]${NC} Verificando dependencias..."
 
 check_command() {
     if command -v $1 &> /dev/null; then
@@ -50,11 +50,13 @@ MISSING=0
 check_command gcc || MISSING=1
 check_command wget || MISSING=1
 check_command xorriso || MISSING=1
+check_command cpio || MISSING=1
+check_command gzip || MISSING=1
 
 if [ $MISSING -eq 1 ]; then
     echo -e "${RED}Faltan dependencias. Instala:${NC}"
-    echo "  Ubuntu/Debian: sudo apt-get install build-essential wget xorriso"
-    echo "  Fedora: sudo dnf install gcc wget xorriso"
+    echo "  Ubuntu/Debian: sudo apt-get install build-essential wget xorriso cpio gzip"
+    echo "  Fedora: sudo dnf install gcc wget xorriso cpio gzip"
     exit 1
 fi
 
@@ -64,7 +66,7 @@ echo -e "${GREEN}  ✓ Todas las dependencias presentes${NC}\n"
 # PASO 2: DESCARGAR ALPINE LINUX
 # ========================================
 
-echo -e "${YELLOW}[2/10]${NC} Descargando Alpine Linux base..."
+echo -e "${YELLOW}[2/9]${NC} Descargando Alpine Linux..."
 
 if [ ! -f "$ALPINE_ISO" ]; then
     echo "  Descargando $ALPINE_ISO..."
@@ -83,373 +85,341 @@ echo ""
 # PASO 3: COMPILAR EL SISTEMA
 # ========================================
 
-echo -e "${YELLOW}[3/10]${NC} Compilando Sistema Operativo Descentralizado..."
+echo -e "${YELLOW}[3/9]${NC} Compilando Sistema Operativo..."
 
 if [ ! -f "src/main_alpine.c" ]; then
     echo -e "${RED}Error: No se encuentra src/main_alpine.c${NC}"
-    echo "Asegúrate de estar en el directorio correcto"
     exit 1
 fi
 
-echo "  Compilando con optimizaciones..."
-gcc -Wall -Wextra -O2 -pthread \
+echo "  Compilando estáticamente..."
+gcc -Wall -Wextra -O2 -static -pthread \
     -o dos_system \
     src/main_alpine.c \
-    -lm -lrt || {
+    -lm || {
         echo -e "${RED}Error en compilación${NC}"
         exit 1
     }
 
-echo -e "${GREEN}  ✓ Sistema compilado: dos_system${NC}"
+# Verificar que el binario es estático
+if file dos_system | grep -q "statically linked"; then
+    echo -e "${GREEN}  ✓ Binario estático creado correctamente${NC}"
+else
+    echo -e "${YELLOW}  ⚠ Advertencia: El binario no es completamente estático${NC}"
+fi
+
 echo "    Tamaño: $(du -h dos_system | cut -f1)"
 echo ""
 
 # ========================================
-# PASO 4: EXTRAER ALPINE (CORREGIDO)
+# PASO 4: EXTRAER ALPINE
 # ========================================
 
-echo -e "${YELLOW}[4/10]${NC} Extrayendo Alpine Linux..."
+echo -e "${YELLOW}[4/9]${NC} Extrayendo Alpine Linux..."
 
-# Limpiar si existe
-sudo rm -rf alpine_mount alpine_custom 2>/dev/null || true
-
+sudo rm -rf alpine_mount alpine_custom iso_work 2>/dev/null || true
 mkdir -p alpine_mount alpine_custom
 
-echo "  Montando ISO..."
+echo "  Montando ISO original..."
 sudo mount -o loop "$ALPINE_ISO" alpine_mount || {
     echo -e "${RED}Error montando ISO${NC}"
     exit 1
 }
 
-echo "  Copiando archivos (esto puede tardar)..."
-sudo cp -a alpine_mount/* alpine_custom/ || {
+echo "  Copiando archivos..."
+sudo rsync -a alpine_mount/ alpine_custom/ || {
     echo -e "${RED}Error copiando archivos${NC}"
-    sudo umount alpine_mount 2>/dev/null
+    sudo umount alpine_mount
     exit 1
 }
-
-sudo chmod -R u+w alpine_custom/
 
 sudo umount alpine_mount
 rmdir alpine_mount
 
-# VERIFICAR estructura de Alpine
-echo "  Verificando estructura de Alpine..."
-if [ ! -d "alpine_custom/boot" ]; then
-    echo -e "${RED}Error: Estructura de Alpine inválida${NC}"
+sudo chmod -R u+w alpine_custom/
+
+echo -e "${GREEN}  ✓ Alpine extraído${NC}\n"
+
+# ========================================
+# PASO 5: MODIFICAR INITRAMFS (MÉTODO CORRECTO)
+# ========================================
+
+echo -e "${YELLOW}[5/9]${NC} Modificando initramfs..."
+
+# Crear directorio de trabajo
+mkdir -p iso_work/initramfs
+cd iso_work/initramfs
+
+# Extraer initramfs de Alpine
+echo "  Extrayendo initramfs de Alpine..."
+if [ -f "../../alpine_custom/boot/initramfs-lts" ]; then
+    INITRAMFS_FILE="initramfs-lts"
+elif [ -f "../../alpine_custom/boot/initramfs-virt" ]; then
+    INITRAMFS_FILE="initramfs-virt"
+else
+    echo -e "${RED}No se encontró initramfs en Alpine${NC}"
+    cd ../..
     exit 1
 fi
 
-echo -e "${GREEN}  ✓ Alpine extraído correctamente${NC}\n"
+gzip -dc "../../alpine_custom/boot/$INITRAMFS_FILE" | cpio -idm 2>/dev/null || {
+    echo -e "${RED}Error extrayendo initramfs${NC}"
+    cd ../..
+    exit 1
+}
 
-# ========================================
-# PASO 5: PERSONALIZAR ALPINE (CORREGIDO)
-# ========================================
-
-echo -e "${YELLOW}[5/10]${NC} Personalizando Alpine Linux..."
+echo "  Añadiendo nuestro sistema..."
 
 # Crear directorio para nuestro sistema
-sudo mkdir -p alpine_custom/dos/{bin,config,logs}
+mkdir -p dos/bin dos/config dos/logs
 
-# Copiar el binario
-sudo cp dos_system alpine_custom/dos/bin/
-sudo chmod +x alpine_custom/dos/bin/dos_system
+# Copiar binario
+cp ../../dos_system dos/bin/
+chmod +x dos/bin/dos_system
 
 # Crear script de configuración de red
-sudo tee alpine_custom/dos/bin/setup_network.sh > /dev/null << 'EOFNET'
+cat > dos/bin/setup_network.sh << 'EOFNET'
 #!/bin/sh
-
-echo "[NETWORK] Configurando interfaces de red..."
+echo "[RED] Configurando red..."
 
 # Configurar loopback
 ip link set lo up
 ip addr add 127.0.0.1/8 dev lo
 
-# Buscar y configurar todas las interfaces ethernet
-for iface in $(ls /sys/class/net/ 2>/dev/null | grep -E '^eth|^enp' || echo ""); do
-    if [ -n "$iface" ]; then
-        echo "  Configurando $iface..."
-        ip link set $iface up 2>/dev/null
-        
-        # Intentar DHCP primero
-        timeout 5 udhcpc -i $iface -n -q 2>/dev/null || {
-            # Si DHCP falla, asignar IP estática
-            ip addr add 192.168.100.$((RANDOM % 200 + 10))/24 dev $iface 2>/dev/null
-        }
-    fi
+# Configurar todas las interfaces ethernet
+for iface in $(ls /sys/class/net/ | grep -E '^eth|^enp'); do
+    echo "  Activando $iface..."
+    ip link set $iface up
+    timeout 5 udhcpc -i $iface -n -q 2>/dev/null || \
+        ip addr add 192.168.100.$((10 + RANDOM % 200))/24 dev $iface
 done
 
-echo "[NETWORK] Configuración de red completada"
-echo ""
-echo "Interfaces activas:"
-ip addr show 2>/dev/null | grep -E "^[0-9]+:|inet " | grep -v "inet 127" || echo "  (verificando...)"
-echo ""
+echo "[RED] Red configurada"
 EOFNET
+chmod +x dos/bin/setup_network.sh
 
-sudo chmod +x alpine_custom/dos/bin/setup_network.sh
-
-# Crear script principal de inicio
-sudo tee alpine_custom/dos/bin/start_dos.sh > /dev/null << 'EOFSTART'
+# Crear script de inicio principal
+cat > dos/bin/start_dos.sh << 'EOFSTART'
 #!/bin/sh
-
 clear
 
 cat << 'BANNER'
 ╔═══════════════════════════════════════════════════════════╗
-║                                                           ║
 ║      SISTEMA OPERATIVO DESCENTRALIZADO v1.0              ║
-║      Iniciando sobre Alpine Linux                        ║
-║                                                           ║
 ╚═══════════════════════════════════════════════════════════╝
-
 BANNER
 
 echo ""
-echo "Inicializando sistema..."
-echo ""
+echo "Iniciando sistema..."
 
 # Configurar red
 /dos/bin/setup_network.sh
 
-# Mostrar información del nodo
-echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "════════════════════════════════════════════════════════"
 echo "INFORMACIÓN DEL NODO:"
-echo "═══════════════════════════════════════════════════════════"
+echo "════════════════════════════════════════════════════════"
 echo "Hostname: $(hostname)"
-echo "Sistema: Alpine Linux $(cat /etc/alpine-release 2>/dev/null || echo 'N/A')"
+echo "Sistema: Alpine Linux $(cat /etc/alpine-release 2>/dev/null)"
 echo "Kernel: $(uname -r)"
-echo "Arquitectura: $(uname -m)"
+echo ""
+echo "Red:"
+ip addr show | grep -E "inet " | grep -v "127.0.0.1" | awk '{print "  " $2}' || echo "  (configurando...)"
+echo ""
+echo "⚠️  Puertos: 8888 (UDP Discovery), 8889 (TCP Data)"
+echo "════════════════════════════════════════════════════════"
 echo ""
 
-# Advertencia sobre red
-echo "⚠️  IMPORTANTE:"
-echo "   Asegúrate de que la red de VirtualBox esté en modo"
-echo "   'Bridge' o 'Red Interna' para que los nodos se"
-echo "   puedan descubrir entre sí."
-echo ""
-echo "   Puertos usados: 8888 (UDP), 8889 (TCP)"
-echo ""
-
-# Esperar un momento
 sleep 2
 
-# Iniciar el sistema operativo descentralizado
 echo "Iniciando SO Descentralizado..."
 echo ""
 
 cd /dos
 exec /dos/bin/dos_system
 EOFSTART
+chmod +x dos/bin/start_dos.sh
 
-sudo chmod +x alpine_custom/dos/bin/start_dos.sh
+# Modificar init para ejecutar nuestro sistema
+echo "  Modificando script de inicio..."
 
-# ========================================
-# CONFIGURAR AUTO-INICIO (MÉTODO CORRECTO PARA ALPINE)
-# ========================================
-
-echo "  Configurando auto-inicio con OpenRC..."
-
-# Crear servicio OpenRC en lugar de modificar inittab
-sudo mkdir -p alpine_custom/etc/init.d
-sudo mkdir -p alpine_custom/etc/runlevels/default
-
-sudo tee alpine_custom/etc/init.d/dos > /dev/null << 'EOFINIT'
-#!/sbin/openrc-run
-
-name="Sistema Operativo Descentralizado"
-description="Sistema Operativo Descentralizado para redes Ad hoc"
-command="/dos/bin/start_dos.sh"
-command_background="no"
-pidfile="/run/dos.pid"
-
-depend() {
-    need net localmount
-    after firewall
-}
-
-start_pre() {
-    # Asegurar que los directorios existen
-    checkpath --directory --mode 0755 /dos/logs
-}
-EOFINIT
-
-sudo chmod +x alpine_custom/etc/init.d/dos
-
-# ALTERNATIVA: Usar /etc/local.d/ (más simple y compatible)
-echo "  Configurando inicio automático con local.d..."
-
-sudo mkdir -p alpine_custom/etc/local.d
-
-sudo tee alpine_custom/etc/local.d/dos.start > /dev/null << 'EOFLOCAL'
-#!/bin/sh
-# Auto-inicio del Sistema Operativo Descentralizado
-
-# Esperar a que la red esté lista
-sleep 3
-
-# Iniciar en background si queremos que continue el boot
-# O en foreground si queremos que tome control
-/dos/bin/start_dos.sh &
-EOFLOCAL
-
-sudo chmod +x alpine_custom/etc/local.d/dos.start
-
-# ALTERNATIVA 2: Modificar /etc/inittab SOLO SI EXISTE
-if [ -f "alpine_custom/etc/inittab" ]; then
-    echo "  Modificando inittab existente..."
-    sudo tee -a alpine_custom/etc/inittab > /dev/null << 'EOFINIT2'
-
-# Sistema Operativo Descentralizado
-dos::respawn:/dos/bin/start_dos.sh
-EOFINIT2
-else
-    echo "  (inittab no existe, usando local.d)"
+# Buscar y modificar el init de Alpine
+if [ -f "init" ]; then
+    # Hacer backup
+    cp init init.bak
+    
+    # Añadir nuestra llamada al final del init (antes del exec final)
+    # Buscar la línea que ejecuta /sbin/init o similar y añadir antes
+    sed -i '/exec \/sbin\/init/i /dos/bin/start_dos.sh' init 2>/dev/null || true
+    
+    # Si no encuentra esa línea, añadir al final
+    echo "" >> init
+    echo "# Sistema Operativo Descentralizado" >> init
+    echo "/dos/bin/start_dos.sh" >> init
 fi
 
-# Crear configuración
-sudo tee alpine_custom/dos/config/dos.conf > /dev/null << 'EOFCONFIG'
-# Configuración del Sistema Operativo Descentralizado
+# Reempaquetar initramfs
+echo "  Reempaquetando initramfs..."
+find . | cpio -o -H newc 2>/dev/null | gzip -9 > ../dos_initramfs.gz
 
-[Network]
-DISCOVERY_PORT=8888
-DATA_PORT=8889
-BROADCAST_INTERVAL=5
-NODE_TIMEOUT=15
+cd ../..
 
-[System]
-MAX_NODES=100
-MAX_TASKS=1000
-AUTO_START=true
-DEBUG_MODE=false
+# Reemplazar initramfs en la ISO
+sudo cp iso_work/dos_initramfs.gz "alpine_custom/boot/$INITRAMFS_FILE"
 
-[Scheduler]
-ALGORITHM=intelligent
-LOAD_BALANCING=true
-REPUTATION_ENABLED=true
-
-[Memory]
-SHARED_MEMORY_SIZE=1GB
-REPLICATION_FACTOR=3
-CACHE_SIZE=256MB
-
-[Logging]
-LOG_LEVEL=INFO
-LOG_FILE=/dos/logs/system.log
-EOFCONFIG
-
-echo -e "${GREEN}  ✓ Alpine personalizado correctamente${NC}\n"
+echo -e "${GREEN}  ✓ Initramfs modificado${NC}\n"
 
 # ========================================
-# PASO 6: DOCUMENTACIÓN
+# PASO 6: MODIFICAR GRUB
 # ========================================
 
-echo -e "${YELLOW}[6/10]${NC} Creando documentación..."
+echo -e "${YELLOW}[6/9]${NC} Configurando GRUB..."
 
-sudo tee alpine_custom/README_DOS.txt > /dev/null << 'EOFREADME'
+if [ -f "alpine_custom/boot/grub/grub.cfg" ]; then
+    # Hacer backup
+    sudo cp alpine_custom/boot/grub/grub.cfg alpine_custom/boot/grub/grub.cfg.bak
+    
+    # Crear nueva configuración
+    sudo tee alpine_custom/boot/grub/grub.cfg > /dev/null << 'EOFGRUB'
+set timeout=3
+set default=0
+
+menuentry "Sistema Operativo Descentralizado" {
+    linux /boot/vmlinuz-lts modules=loop,squashfs,sd-mod,usb-storage quiet
+    initrd /boot/initramfs-lts
+}
+
+menuentry "SO Descentralizado (Debug)" {
+    linux /boot/vmlinuz-lts modules=loop,squashfs,sd-mod,usb-storage console=tty0 debug
+    initrd /boot/initramfs-lts
+}
+
+menuentry "Alpine Linux (Original)" {
+    linux /boot/vmlinuz-lts modules=loop,squashfs,sd-mod,usb-storage quiet
+    initrd /boot/initramfs-lts
+}
+EOFGRUB
+    
+    echo -e "${GREEN}  ✓ GRUB configurado${NC}"
+else
+    echo -e "${YELLOW}  ⚠ No se encontró grub.cfg${NC}"
+fi
+
+echo ""
+
+# ========================================
+# PASO 7: AÑADIR DOCUMENTACIÓN
+# ========================================
+
+echo -e "${YELLOW}[7/9]${NC} Añadiendo documentación..."
+
+sudo tee alpine_custom/README.txt > /dev/null << 'EOFREADME'
 ╔═══════════════════════════════════════════════════════════╗
-║   SISTEMA OPERATIVO DESCENTRALIZADO - GUÍA RÁPIDA        ║
+║   SISTEMA OPERATIVO DESCENTRALIZADO - README              ║
 ╚═══════════════════════════════════════════════════════════╝
 
 INICIO RÁPIDO:
 1. Arrancar desde esta ISO
-2. El sistema se iniciará automáticamente (~30 segundos)
-3. La red se configurará por DHCP automáticamente
-4. Los nodos se descubrirán mediante broadcast UDP
+2. Esperar ~20 segundos
+3. El sistema se iniciará automáticamente
 
-COMANDOS DISPONIBLES:
-  status  - Ver estado completo (nodos, tareas, sistema)
-  nodes   - Listar nodos activos en la red
-  task <descripción> - Crear tarea distribuida
-  tasks   - Ver todas las tareas
-  help    - Mostrar ayuda completa
-  exit    - Salir del sistema
+COMANDOS:
+  status  - Estado del sistema
+  nodes   - Nodos activos
+  task <desc> - Crear tarea
+  tasks   - Ver tareas
+  help    - Ayuda
+  exit    - Salir
 
-CONFIGURACIÓN DE VIRTUALBOX:
-Para que funcione la red Ad hoc:
+VIRTUALBOX:
+- Red: Modo Bridge o Red Interna (NO NAT)
+- RAM: Mínimo 512MB, recomendado 1024MB
+- CPU: 1-2 cores
 
-1. MODO BRIDGE (Recomendado):
-   VM → Settings → Network → Adapter 1
-   - Attached to: Bridged Adapter
-   - Name: (Tu interfaz de red física)
-   
-2. MODO RED INTERNA (Para pruebas locales):
-   VM → Settings → Network → Adapter 1
-   - Attached to: Internal Network
-   - Name: dos_network (mismo en todas las VMs)
+PUERTOS:
+- 8888/UDP: Discovery
+- 8889/TCP: Datos
 
-3. NO USAR NAT - Los nodos no se verán entre sí
-
-PUERTOS UTILIZADOS:
-- 8888/UDP: Descubrimiento de nodos (Broadcast)
-- 8889/TCP: Transferencia de datos entre nodos
-
-SOLUCIÓN DE PROBLEMAS:
-- Si no aparece el sistema: Espera 30 segundos
-- Si no ve otros nodos: Verifica configuración de red
-- Si firewall bloquea: Ejecuta en Alpine:
-    iptables -F
-    iptables -P INPUT ACCEPT
-
-ACCESO MANUAL (Si necesario):
-- Usuario: root (sin contraseña)
-- Iniciar manualmente: /dos/bin/start_dos.sh
-- Ver logs: dmesg | tail -50
-
-═══════════════════════════════════════════════════════════
-Sistema desarrollado para redes Ad hoc
-═══════════════════════════════════════════════════════════
+Si el sistema no inicia automáticamente:
+  Login: root (sin password)
+  Ejecutar: /dos/bin/start_dos.sh
 EOFREADME
 
-echo -e "${GREEN}  ✓ Documentación creada${NC}\n"
+echo -e "${GREEN}  ✓ Documentación añadida${NC}\n"
 
 # ========================================
-# PASO 7: GENERAR ISO
+# PASO 8: GENERAR ISO (MÉTODO CORRECTO)
 # ========================================
 
-echo -e "${YELLOW}[7/10]${NC} Generando imagen ISO..."
+echo -e "${YELLOW}[8/9]${NC} Generando imagen ISO..."
 
-# Verificar que GRUB existe
-if [ ! -d "alpine_custom/boot/grub" ]; then
-    echo -e "${RED}Error: No se encuentra boot/grub en Alpine${NC}"
-    echo "La ISO de Alpine puede estar corrupta"
-    exit 1
-fi
-
-sudo xorriso -as mkisofs \
-    -iso-level 3 \
-    -full-iso9660-filenames \
-    -volid "DOS_VBOX" \
-    -eltorito-boot boot/grub/eltorito.img \
+# Método 1: Intentar con la configuración exacta de Alpine
+if sudo xorriso -as mkisofs \
+    -o "$OUTPUT_ISO" \
+    -isohybrid-mbr /usr/lib/syslinux/mbr/isohdpfx.bin 2>/dev/null \
+    -c boot/syslinux/boot.cat \
+    -b boot/syslinux/isolinux.bin \
     -no-emul-boot \
     -boot-load-size 4 \
     -boot-info-table \
-    -eltorito-catalog boot/grub/boot.cat \
-    -output "$OUTPUT_ISO" \
-    alpine_custom/ 2>&1 | grep -v "NOTE" || {
+    -eltorito-alt-boot \
+    -e boot/grub/efi.img \
+    -no-emul-boot \
+    -isohybrid-gpt-basdat \
+    alpine_custom/ 2>&1 | grep -E "Update|Writing" ; then
+    
+    echo -e "${GREEN}  ✓ ISO creada con soporte EFI/BIOS${NC}"
+
+# Método 2: Si falla, usar configuración simple
+elif sudo xorriso -as mkisofs \
+    -o "$OUTPUT_ISO" \
+    -c boot/syslinux/boot.cat \
+    -b boot/syslinux/isolinux.bin \
+    -no-emul-boot \
+    -boot-load-size 4 \
+    -boot-info-table \
+    alpine_custom/ 2>&1 | grep -E "Update|Writing" ; then
+    
+    echo -e "${GREEN}  ✓ ISO creada con soporte BIOS${NC}"
+
+# Método 3: Copia bit-a-bit con modificaciones
+else
+    echo -e "${YELLOW}  Usando método alternativo...${NC}"
+    
+    # Crear ISO básica
+    sudo mkisofs -o "$OUTPUT_ISO" \
+        -V "DOS_VBOX" \
+        -J -R \
+        alpine_custom/ 2>&1 | grep -E "done|Writing" || {
         echo -e "${RED}Error creando ISO${NC}"
         exit 1
     }
+    
+    echo -e "${YELLOW}  ⚠ ISO creada sin boot (solo para pruebas)${NC}"
+fi
 
-SIZE=$(du -h "$OUTPUT_ISO" | cut -f1)
-echo -e "${GREEN}  ✓ ISO creada: $OUTPUT_ISO ($SIZE)${NC}\n"
-
-# ========================================
-# PASO 8: SCRIPTS DE VIRTUALBOX
-# ========================================
-
-echo -e "${YELLOW}[8/10]${NC} Creando scripts para VirtualBox..."
-
-cat > create_vm_vbox.sh << 'EOFVM'
-#!/bin/bash
-
-VM_NAME="DOS_Node_$1"
-ISO="dos_virtualbox.iso"
-
-if [ -z "$1" ]; then
-    echo "Uso: $0 <numero_nodo>"
-    echo "Ejemplo: $0 1"
+if [ -f "$OUTPUT_ISO" ]; then
+    SIZE=$(du -h "$OUTPUT_ISO" | cut -f1)
+    echo -e "${GREEN}  ✓ Archivo: $OUTPUT_ISO ($SIZE)${NC}"
+else
+    echo -e "${RED}  ✗ No se pudo crear la ISO${NC}"
     exit 1
 fi
+
+echo ""
+
+# ========================================
+# PASO 9: CREAR SCRIPTS DE VIRTUALBOX
+# ========================================
+
+echo -e "${YELLOW}[9/9]${NC} Creando scripts de VirtualBox..."
+
+# Script para crear VM individual
+cat > create_vm.sh << 'EOFVM'
+#!/bin/bash
+
+VM_NAME="DOS_Node_${1:-1}"
+ISO="dos_virtualbox.iso"
 
 if [ ! -f "$ISO" ]; then
     echo "Error: No se encuentra $ISO"
@@ -458,25 +428,37 @@ fi
 
 echo "Creando VM: $VM_NAME"
 
+# Verificar si ya existe
+if VBoxManage showvminfo "$VM_NAME" &>/dev/null; then
+    echo "VM ya existe, eliminando..."
+    VBoxManage unregistervm "$VM_NAME" --delete 2>/dev/null || true
+fi
+
+# Crear VM
 VBoxManage createvm --name "$VM_NAME" --ostype Linux_64 --register
 
+# Configurar hardware
 VBoxManage modifyvm "$VM_NAME" \
     --memory 1024 \
     --cpus 2 \
     --vram 16 \
     --boot1 dvd \
-    --boot2 disk \
+    --boot2 none \
     --boot3 none \
     --boot4 none \
     --audio none \
     --usb off
 
+# Configurar red en modo Bridge
+BRIDGE_ADAPTER=$(VBoxManage list bridgedifs | grep "^Name:" | head -1 | cut -d: -f2 | xargs)
 VBoxManage modifyvm "$VM_NAME" \
     --nic1 bridged \
-    --bridgeadapter1 "$(VBoxManage list bridgedifs | grep ^Name | head -1 | cut -d: -f2 | xargs)"
+    --bridgeadapter1 "$BRIDGE_ADAPTER"
 
+# Crear controlador de almacenamiento
 VBoxManage storagectl "$VM_NAME" --name "IDE" --add ide
 
+# Adjuntar ISO
 VBoxManage storageattach "$VM_NAME" \
     --storagectl "IDE" \
     --port 0 \
@@ -486,40 +468,39 @@ VBoxManage storageattach "$VM_NAME" \
 
 echo "✅ VM '$VM_NAME' creada"
 echo ""
-echo "Para iniciar:"
-echo "  VBoxManage startvm '$VM_NAME' --type gui"
+echo "Para iniciar: VBoxManage startvm '$VM_NAME'"
 EOFVM
+chmod +x create_vm.sh
 
-chmod +x create_vm_vbox.sh
-
-cat > start_cluster_vbox.sh << 'EOFCLUSTER'
+# Script para crear cluster
+cat > start_cluster.sh << 'EOFCLUSTER'
 #!/bin/bash
 
-echo "Creando cluster de 3 nodos..."
+echo "╔═══════════════════════════════════════════════════════════╗"
+echo "║  Creando cluster de 3 nodos                               ║"
+echo "╚═══════════════════════════════════════════════════════════╝"
 echo ""
 
 for i in 1 2 3; do
-    VM_NAME="DOS_Node_$i"
+    echo "[Nodo $i] Creando VM..."
+    ./create_vm.sh $i
     
-    if ! VBoxManage showvminfo "$VM_NAME" &>/dev/null; then
-        echo "Creando VM $i..."
-        ./create_vm_vbox.sh $i
-    fi
+    echo "[Nodo $i] Iniciando..."
+    VBoxManage startvm "DOS_Node_$i" --type gui &
     
-    echo "Iniciando Nodo $i..."
-    VBoxManage startvm "$VM_NAME" --type gui &
-    
-    sleep 3
+    sleep 2
 done
 
 echo ""
 echo "✅ Cluster iniciado"
 echo "Espera ~30 segundos para que los nodos se descubran"
+echo ""
+echo "Para detener: ./stop_cluster.sh"
 EOFCLUSTER
+chmod +x start_cluster.sh
 
-chmod +x start_cluster_vbox.sh
-
-cat > stop_cluster_vbox.sh << 'EOFSTOP'
+# Script para detener cluster
+cat > stop_cluster.sh << 'EOFSTOP'
 #!/bin/bash
 
 echo "Deteniendo cluster..."
@@ -527,132 +508,61 @@ echo "Deteniendo cluster..."
 for i in 1 2 3; do
     VM_NAME="DOS_Node_$i"
     if VBoxManage showvminfo "$VM_NAME" 2>/dev/null | grep -q "running"; then
-        echo "Deteniendo Nodo $i..."
-        VBoxManage controlvm "$VM_NAME" poweroff
+        echo "  Deteniendo $VM_NAME..."
+        VBoxManage controlvm "$VM_NAME" poweroff 2>/dev/null || true
     fi
 done
 
 echo "✅ Cluster detenido"
 EOFSTOP
+chmod +x stop_cluster.sh
 
-chmod +x stop_cluster_vbox.sh
-
-echo -e "${GREEN}  ✓ Scripts de VirtualBox creados${NC}\n"
-
-# ========================================
-# PASO 9: GUÍA
-# ========================================
-
-echo -e "${YELLOW}[9/10]${NC} Creando guía de uso..."
-
-cat > GUIA_RAPIDA.txt << 'EOFGUIA'
-═══════════════════════════════════════════════════════════
-GUÍA RÁPIDA - SISTEMA OPERATIVO DESCENTRALIZADO
-═══════════════════════════════════════════════════════════
-
-🚀 INICIO RÁPIDO:
-
-1. Crear VMs automáticamente:
-   ./start_cluster_vbox.sh
-
-2. O crear manualmente:
-   ./create_vm_vbox.sh 1
-   VBoxManage startvm DOS_Node_1 --type gui
-
-3. Esperar ~30 segundos mientras carga
-
-4. Usar comandos:
-   > status  (ver estado)
-   > nodes   (ver nodos conectados)
-   > task Mi tarea  (crear tarea)
-   > tasks   (ver todas las tareas)
-
-═══════════════════════════════════════════════════════════
-
-⚠️ IMPORTANTE - CONFIGURACIÓN DE RED:
-
-VirtualBox → VM → Settings → Network
-
-OPCIÓN A - Red entre VMs en mismo PC:
-  • Attached to: Internal Network
-  • Name: dos_network (MISMO en todas las VMs)
-
-OPCIÓN B - Red real (VMs en diferentes PCs):
-  • Attached to: Bridged Adapter
-  • Name: Tu interfaz de red (eth0, wlan0, etc.)
-
-❌ NO USAR NAT (no funciona para Ad hoc)
-
-═══════════════════════════════════════════════════════════
-
-📝 PRUEBA DE FUNCIONAMIENTO:
-
-En VM 1:
-> nodes
-(esperar 10-15 segundos)
-> nodes
-(deberías ver VM 2 y VM 3)
-
-En VM 2:
-> task Prueba desde VM2
-
-En VM 1:
-> tasks
-(deberías ver la tarea de VM 2)
-
-═══════════════════════════════════════════════════════════
-
-🐛 SOLUCIÓN DE PROBLEMAS:
-
-• Pantalla negra: Espera 30 segundos
-• No ve otros nodos: Verifica configuración de red
-• ISO no bootea: Verifica orden de arranque (CD primero)
-• VM lenta: Aumenta RAM a 1024 MB
-
-═══════════════════════════════════════════════════════════
-EOFGUIA
-
-echo -e "${GREEN}  ✓ Guía creada${NC}\n"
+echo -e "${GREEN}  ✓ Scripts creados${NC}\n"
 
 # ========================================
-# PASO 10: LIMPIEZA
+# LIMPIEZA
 # ========================================
 
-echo -e "${YELLOW}[10/10]${NC} Limpiando archivos temporales..."
-
-sudo rm -rf alpine_custom alpine_mount 2>/dev/null || true
-
-echo -e "${GREEN}  ✓ Limpieza completada${NC}\n"
+sudo rm -rf alpine_custom iso_work 2>/dev/null || true
 
 # ========================================
-# RESUMEN
+# RESUMEN FINAL
 # ========================================
 
-echo -e "${GREEN}"
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════╗
-║              ✅ GENERACIÓN COMPLETA                       ║
-╚═══════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
-
-echo -e "${BLUE}📦 Archivos generados:${NC}"
 echo ""
-echo "  📀 $OUTPUT_ISO ($SIZE)"
-echo "  📜 create_vm_vbox.sh"
-echo "  📜 start_cluster_vbox.sh"
-echo "  📜 stop_cluster_vbox.sh"
-echo "  📖 GUIA_RAPIDA.txt"
+echo -e "${GREEN}╔═══════════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║              ✅ ISO GENERADA EXITOSAMENTE                 ║${NC}"
+echo -e "${GREEN}╚═══════════════════════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+echo -e "${CYAN}📦 Archivos generados:${NC}"
+echo ""
+echo "  📀 $OUTPUT_ISO"
+if [ -f "$OUTPUT_ISO" ]; then
+    SIZE=$(du -h "$OUTPUT_ISO" | cut -f1)
+    echo "     Tamaño: $SIZE"
+fi
+echo "  📜 create_vm.sh - Crear VM individual"
+echo "  📜 start_cluster.sh - Crear cluster de 3 nodos"
+echo "  📜 stop_cluster.sh - Detener cluster"
+echo ""
+
 echo -e "${YELLOW}🚀 PRÓXIMOS PASOS:${NC}"
+echo ""
+echo "1. Probar con un nodo:"
+echo -e "   ${GREEN}./create_vm.sh 1${NC}"
+echo -e "   ${GREEN}VBoxManage startvm DOS_Node_1${NC}"
+echo ""
+echo "2. O crear cluster completo:"
+echo -e "   ${GREEN}./start_cluster.sh${NC}"
+echo ""
+echo "3. Dentro de la VM:"
+echo "   - Espera ~20 segundos"
+echo "   - Escribe: status"
+echo "   - Escribe: nodes (para ver otros nodos)"
+echo ""
+
 echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo ""
-echo "1. Crear y probar cluster:"
-echo -e "   ${GREEN}./start_cluster_vbox.sh${NC}"
-echo ""
-echo "2. Ver guía rápida:"
-echo -e "   ${GREEN}cat GUIA_RAPIDA.txt${NC}"
-echo ""
-echo -e "${GREEN}✨ Sistema listo para VirtualBox${NC}"
+echo -e "${GREEN}✨ Todo listo para probar el sistema${NC}"
+echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
