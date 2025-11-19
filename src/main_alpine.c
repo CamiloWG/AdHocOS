@@ -18,6 +18,7 @@
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <errno.h>
+#include <net/if.h>
 
 // ========================================
 // CONSTANTES Y CONFIGURACIÓN
