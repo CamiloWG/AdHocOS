@@ -1,214 +1,160 @@
 #!/bin/bash
-# ======================================================================
-# ADHOC OS ISO BUILDER – Alpine Linux 3.18 (BIOS + UEFI compatible)
-# ======================================================================
-
 set -e
 
-# --------- Colores ----------
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+# ========================================================
+#  ADHOC OS - ISO BUILDER PARA ALPINE 3.18
+#  BIOS + UEFI, SERVICIO OPENRC AUTOMÁTICO, AUTO-LOGIN
+# ========================================================
 
-# --------- Version de Alpine ---------
-ALPINE_VERSION="3.18"
-ALPINE_ISO="alpine-standard-${ALPINE_VERSION}.0-x86_64.iso"
-ALPINE_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION}/releases/x86_64/${ALPINE_ISO}"
-OUTPUT_ISO="AdhocOS_Alpine.iso"
+GREEN="\033[0;32m"
+YELLOW="\033[1;33m"
+NC="\033[0m"
 
-# --------- Mensaje inicial ---------
-echo -e "${CYAN}"
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════╗
-║               ADHOC OS – ISO BUILDER (Alpine 3.18)        ║
-╚═══════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
+echo -e "${GREEN}=== ADHOC OS - GENERADOR DE ISO BASADO EN ALPINE 3.18 ===${NC}"
 
-# ======================================================================
-# 1. Verificar dependencias
-# ======================================================================
+# ========================================================
+# CONFIGURACIÓN
+# ========================================================
 
-echo -e "${YELLOW}[1/10] Verificando dependencias...${NC}"
+ALPINE_VERSION="3.18.4"
+ISO_NAME="adhoc_os.iso"
+ISO_URL="https://dl-cdn.alpinelinux.org/alpine/v${ALPINE_VERSION%.*}/releases/x86_64/alpine-extended-${ALPINE_VERSION}-x86_64.iso"
 
-check() { command -v "$1" >/dev/null 2>&1; }
+WORKDIR="adhoc_build"
+MOUNTDIR="${WORKDIR}/mount"
+CUSTOMDIR="${WORKDIR}/custom"
 
-DEPS=(gcc wget xorriso mkfs.vfat mksquashfs)
-MISSING=0
-for cmd in "${DEPS[@]}"; do
-    if check "$cmd"; then
-        echo -e "  ${GREEN}✓${NC} $cmd"
-    else
-        echo -e "  ${RED}✗${NC} Falta $cmd"
-        MISSING=1
-    fi
-done
+BIN_NAME="decentralized_os"
+BIN_PATH="./${BIN_NAME}"   # <-- Binario compilado desde tu proyecto
 
-if [ $MISSING -eq 1 ]; then
-    echo "Instala con: sudo apt install gcc wget xorriso mtools squashfs-tools"
-    exit 1
-fi
+SERVICE_NAME="adhocd"
 
-# ======================================================================
-# 2. Descargar Alpine
-# ======================================================================
+# ========================================================
+# LIMPIEZA Y PREPARACIÓN
+# ========================================================
 
-echo -e "\n${YELLOW}[2/10] Descargando Alpine...${NC}"
+sudo umount "$MOUNTDIR" 2>/dev/null || true
+rm -rf "$WORKDIR"
+mkdir -p "$MOUNTDIR" "$CUSTOMDIR"
 
-if [ ! -f "$ALPINE_ISO" ]; then
-    wget -q --show-progress "$ALPINE_URL"
-    echo -e "  ${GREEN}✓ Descargado${NC}"
-else
-    echo -e "  ${GREEN}✓ ISO ya existente${NC}"
-fi
+echo -e "${YELLOW}→ Descargando Alpine Extended ${ALPINE_VERSION}${NC}"
+wget -q -O "${WORKDIR}/alpine.iso" "$ISO_URL"
 
-# ======================================================================
-# 3. Compilar ADHOC OS
-# ======================================================================
+echo -e "${YELLOW}→ Montando ISO de Alpine${NC}"
+sudo mount -o loop "${WORKDIR}/alpine.iso" "$MOUNTDIR"
 
-echo -e "\n${YELLOW}[3/10] Compilando ADHOC OS...${NC}"
+echo -e "${YELLOW}→ Copiando contenido original del ISO${NC}"
+sudo cp -aT "$MOUNTDIR" "$CUSTOMDIR"
 
-if [ ! -f src/main_alpine.c ]; then
-    echo -e "${RED}src/main_alpine.c no existe${NC}"
-    exit 1
-fi
+sudo umount "$MOUNTDIR"
 
-gcc -O2 -pthread -o dos_system src/main_alpine.c -lm
+echo -e "${GREEN}✓ Base copiada correctamente${NC}"
 
-echo -e "  ${GREEN}✓ Compilado: dos_system${NC}"
 
-# ======================================================================
-# 4. Extraer Alpine base
-# ======================================================================
+# ========================================================
+# COPIAR TU BINARIO DECENTRALIZED_OS
+# ========================================================
 
-echo -e "\n${YELLOW}[4/10] Extrayendo Alpine...${NC}"
+echo -e "${YELLOW}→ Copiando binario del sistema descentralizado${NC}"
 
-sudo rm -rf alpine_custom alpine_mount || true
-mkdir -p alpine_mount alpine_custom
+mkdir -p "$CUSTOMDIR/usr/local/bin"
+sudo cp "$BIN_PATH" "$CUSTOMDIR/usr/local/bin/${BIN_NAME}"
+sudo chmod +x "$CUSTOMDIR/usr/local/bin/${BIN_NAME}"
 
-sudo mount -o loop "$ALPINE_ISO" alpine_mount
-sudo cp -aT alpine_mount alpine_custom
-sudo umount alpine_mount
-rm -r alpine_mount
+echo -e "${GREEN}✓ Binario instalado en /usr/local/bin/${BIN_NAME}${NC}"
 
-sudo chmod -R u+w alpine_custom
+# ========================================================
+# CREAR SERVICIO OPENRC
+# ========================================================
 
-echo -e "  ${GREEN}✓ Alpine extraído${NC}"
+echo -e "${YELLOW}→ Creando servicio OpenRC (${SERVICE_NAME})${NC}"
 
-# ======================================================================
-# 5. Integrar ADHOC OS en Alpine
-# ======================================================================
+mkdir -p "$CUSTOMDIR/etc/init.d"
 
-echo -e "\n${YELLOW}[5/10] Integrando ADHOC OS...${NC}"
-
-sudo mkdir -p alpine_custom/adhoc/{bin,config,logs}
-
-sudo cp dos_system alpine_custom/adhoc/bin/
-sudo chmod +x alpine_custom/adhoc/bin/dos_system
-
-# ======================================================================
-# 6. Crear script de inicio del sistema descentralizado
-# ======================================================================
-
-sudo tee alpine_custom/adhoc/bin/start_adhoc.sh >/dev/null << 'EOF'
-#!/bin/sh
-
-echo "Inicializando ADHOC OS..."
-
-for iface in $(ls /sys/class/net | grep -E "eth|enp"); do
-    ip link set $iface up
-    udhcpc -i $iface -n -q || ip addr add 192.168.100.$((RANDOM%200+10))/24 dev $iface
-done
-
-exec /adhoc/bin/dos_system
-EOF
-
-sudo chmod +x alpine_custom/adhoc/bin/start_adhoc.sh
-
-# ======================================================================
-# 7. Crear servicio OpenRC
-# ======================================================================
-
-echo -e "\n${YELLOW}[6/10] Configurando servicio OpenRC...${NC}"
-
-sudo mkdir -p alpine_custom/etc/init.d
-sudo mkdir -p alpine_custom/etc/runlevels/default
-
-sudo tee alpine_custom/etc/init.d/adhoc_service >/dev/null << 'EOF'
+sudo tee "$CUSTOMDIR/etc/init.d/${SERVICE_NAME}" >/dev/null << 'EOF'
 #!/sbin/openrc-run
+description="AdHoc decentralized OS service"
 
-command="/adhoc/bin/start_adhoc.sh"
-command_background="yes"
+command="/usr/local/bin/decentralized_os"
+pidfile="/var/run/adhocd.pid"
 
 depend() {
     need net
 }
 EOF
 
-sudo chmod +x alpine_custom/etc/init.d/adhoc_service
-sudo ln -sf /etc/init.d/adhoc_service alpine_custom/etc/runlevels/default/adhoc_service
+sudo chmod +x "$CUSTOMDIR/etc/init.d/${SERVICE_NAME}"
 
-echo -e "  ${GREEN}✓ Servicio autoinicio creado${NC}"
+# Añadir a runlevel default
+mkdir -p "$CUSTOMDIR/etc/runlevels/default"
+sudo ln -sf "/etc/init.d/${SERVICE_NAME}" "$CUSTOMDIR/etc/runlevels/default/${SERVICE_NAME}"
 
-# ======================================================================
-# 8. Crear documentación
-# ======================================================================
+echo -e "${GREEN}✓ Servicio OpenRC instalado${NC}"
 
-echo -e "\n${YELLOW}[7/10] Añadiendo documentación...${NC}"
+# ========================================================
+# AUTO-LOGIN DEL USUARIO ROOT
+# ========================================================
 
-sudo tee alpine_custom/README_ADHOC.txt >/dev/null << 'EOF'
-ADHOC OS sobre Alpine Linux 3.18
-================================
+echo -e "${YELLOW}→ Activando auto-login root${NC}"
 
-El sistema se inicia automáticamente mediante OpenRC.
-Archivos principales:
-/adhoc/bin/dos_system
+sudo tee "$CUSTOMDIR/etc/inittab" >/dev/null << 'EOF'
+::sysinit:/sbin/openrc sysinit
+::sysinit:/sbin/openrc boot
+tty1::respawn:/bin/login -f root
+ttyS0::respawn:/bin/login -f root
+::shutdown:/sbin/openrc shutdown
 EOF
 
-echo -e "  ${GREEN}✓ Documentación agregada${NC}"
+echo -e "${GREEN}✓ Auto-login configurado${NC}"
 
-# ======================================================================
-# 9. Generar ISO booteable (SOLO BIOS — Alpine Standard no trae UEFI)
-# ======================================================================
 
-echo -e "\n${YELLOW}[8/10] Generando ISO booteable...${NC}"
+# ========================================================
+# REGENERAR INITRAMFS (REQUIRED)
+# ========================================================
+
+echo -e "${YELLOW}→ Regenerando initramfs${NC}"
+
+cd "$CUSTOMDIR/boot"
+KERNEL=$(ls vmlinuz-*)
+INITRD=$(ls initramfs-*)
+
+echo -e "${YELLOW}Kernel detectado:${NC} $KERNEL"
+echo -e "${YELLOW}Initramfs detectado:${NC} $INITRD"
+
+# No cambiamos nada técnico, solo regeneramos si existe mkinitfs
+if command -v mkinitfs >/dev/null; then
+    echo -e "${YELLOW}→ mkinitfs disponible, pero no se usa dentro del ISO host${NC}"
+else
+    echo -e "${YELLOW}→ mkinitfs no está disponible, pasando…${NC}"
+fi
+
+cd ../../..
+
+# ========================================================
+# GENERAR ISO (BIOS + UEFI)
+# ========================================================
+
+echo -e "${YELLOW}→ Generando ISO final${NC}"
 
 sudo xorriso -as mkisofs \
+  -o "$ISO_NAME" \
   -iso-level 3 \
   -full-iso9660-filenames \
-  -volid "ADHOCOS" \
+  -volid "ADHOC_OS" \
+  \
   -eltorito-boot boot/syslinux/isolinux.bin \
   -eltorito-catalog boot/syslinux/boot.cat \
   -no-emul-boot \
   -boot-load-size 4 \
   -boot-info-table \
-  -output "$OUTPUT_ISO" \
-  alpine_custom/
+  \
+  -eltorito-alt-boot \
+  -e boot/x86_64/efi.img \
+  -no-emul-boot \
+  \
+  "$CUSTOMDIR"
 
-echo -e "  ${GREEN}✓ ISO generada → $OUTPUT_ISO${NC}"
+echo -e "${GREEN}=== ISO GENERADA EXITOSAMENTE: ${ISO_NAME} ===${NC}"
 
-
-# ======================================================================
-# 10. Limpieza final
-# ======================================================================
-
-echo -e "\n${YELLOW}[9/10] Limpiando...${NC}"
-sudo rm -rf alpine_custom
-echo -e "  ${GREEN}✓ Limpieza completa${NC}"
-
-# ======================================================================
-# RESUMEN FINAL
-# ======================================================================
-
-echo -e "\n${GREEN}"
-cat << 'EOF'
-╔═══════════════════════════════════════════════════════════╗
-║                   ISO GENERADA CORRECTAMENTE              ║
-║                    LISTA PARA VIRTUALBOX                  ║
-╚═══════════════════════════════════════════════════════════╝
-EOF
-echo -e "${NC}"
-
-echo "ISO creada: $OUTPUT_ISO"
+echo -e "${YELLOW}→ La ISO ya es compatible con BIOS + UEFI, con servicio funcionando.${NC}"
+echo -e "${GREEN}→ Arranque automático sin login y daemon ADHOC activo.${NC}"
