@@ -75,11 +75,26 @@ check_dependencies() {
         fi
     done
     
+    # Verificar que exista isolinux.bin
+    ISOLINUX_EXISTS=0
+    for dir in /usr/lib/ISOLINUX /usr/share/syslinux /usr/lib/syslinux/bios /usr/lib/syslinux; do
+        if [ -f "$dir/isolinux.bin" ]; then
+            ISOLINUX_EXISTS=1
+            break
+        fi
+    done
+    
+    if [ "$ISOLINUX_EXISTS" -eq 0 ]; then
+        missing="$missing isolinux"
+    fi
+    
     if [ -n "$missing" ]; then
         echo -e "${YELLOW}Instalando dependencias:${missing}${NC}"
         apt-get update -qq
-        apt-get install -y -qq gcc wget cpio gzip xorriso isolinux syslinux-common
+        apt-get install -y -qq gcc wget cpio gzip xorriso isolinux syslinux-common syslinux
     fi
+    
+    print_ok "Dependencias verificadas"
 }
 
 cleanup() {
@@ -1318,19 +1333,38 @@ create_iso_structure() {
     cp "$WORK_DIR/vmlinuz" "$ISO_ROOT/boot/vmlinuz"
     cp "$WORK_DIR/initramfs.gz" "$ISO_ROOT/boot/initramfs.gz"
     
-    # Copiar archivos de ISOLINUX
-    if [ -d /usr/lib/ISOLINUX ]; then
-        cp /usr/lib/ISOLINUX/isolinux.bin "$ISO_ROOT/boot/isolinux/"
-        cp /usr/lib/ISOLINUX/ldlinux.c32 "$ISO_ROOT/boot/isolinux/" 2>/dev/null || true
-    elif [ -d /usr/share/syslinux ]; then
-        cp /usr/share/syslinux/isolinux.bin "$ISO_ROOT/boot/isolinux/"
-        cp /usr/share/syslinux/ldlinux.c32 "$ISO_ROOT/boot/isolinux/" 2>/dev/null || true
+    # Buscar y copiar isolinux.bin desde varias ubicaciones posibles
+    ISOLINUX_FOUND=0
+    for dir in /usr/lib/ISOLINUX /usr/share/syslinux /usr/lib/syslinux/bios /usr/lib/syslinux; do
+        if [ -f "$dir/isolinux.bin" ]; then
+            cp "$dir/isolinux.bin" "$ISO_ROOT/boot/isolinux/"
+            echo "  isolinux.bin encontrado en: $dir"
+            ISOLINUX_FOUND=1
+            break
+        fi
+    done
+    
+    if [ "$ISOLINUX_FOUND" -eq 0 ]; then
+        print_error "No se encontró isolinux.bin"
+        echo "  Instala: apt-get install isolinux syslinux-common"
+        exit 1
     fi
+    
+    # Copiar ldlinux.c32 (necesario para ISOLINUX 6.x)
+    for dir in /usr/lib/ISOLINUX /usr/share/syslinux /usr/lib/syslinux/bios /usr/lib/syslinux/modules/bios; do
+        if [ -f "$dir/ldlinux.c32" ]; then
+            cp "$dir/ldlinux.c32" "$ISO_ROOT/boot/isolinux/"
+            break
+        fi
+    done
     
     # Copiar módulos adicionales de syslinux
     for file in libutil.c32 libcom32.c32 menu.c32 vesamenu.c32; do
-        for dir in /usr/lib/syslinux/modules/bios /usr/share/syslinux; do
-            [ -f "$dir/$file" ] && cp "$dir/$file" "$ISO_ROOT/boot/isolinux/" && break
+        for dir in /usr/lib/syslinux/modules/bios /usr/share/syslinux /usr/lib/syslinux; do
+            if [ -f "$dir/$file" ]; then
+                cp "$dir/$file" "$ISO_ROOT/boot/isolinux/"
+                break
+            fi
         done
     done
     
@@ -1368,6 +1402,10 @@ LABEL shell
     APPEND initrd=/boot/initramfs.gz init=/bin/sh
 EOF
 
+    # Verificar que se creó correctamente
+    echo "  Contenido de boot/isolinux:"
+    ls -la "$ISO_ROOT/boot/isolinux/"
+
     print_ok "Estructura ISO creada"
 }
 
@@ -1380,20 +1418,45 @@ generate_iso() {
     
     ISO_ROOT="$WORK_DIR/iso"
     
-    xorriso -as mkisofs \
-        -o "$OUTPUT_ISO" \
-        -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin 2>/dev/null || \
-    xorriso -as mkisofs \
-        -o "$OUTPUT_ISO" \
-        -isohybrid-mbr /usr/share/syslinux/isohdpfx.bin 2>/dev/null || \
-    xorriso -as mkisofs \
-        -o "$OUTPUT_ISO" \
-        -b boot/isolinux/isolinux.bin \
-        -c boot/isolinux/boot.cat \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        "$ISO_ROOT"
+    # Verificar que isolinux.bin existe
+    if [ ! -f "$ISO_ROOT/boot/isolinux/isolinux.bin" ]; then
+        print_error "isolinux.bin no encontrado en $ISO_ROOT/boot/isolinux/"
+        echo "Contenido de $ISO_ROOT/boot/isolinux/:"
+        ls -la "$ISO_ROOT/boot/isolinux/" 2>/dev/null || echo "Directorio no existe"
+        exit 1
+    fi
+    
+    # Buscar isohdpfx.bin en varias ubicaciones
+    ISOHDPFX=""
+    for path in /usr/lib/ISOLINUX/isohdpfx.bin /usr/share/syslinux/isohdpfx.bin /usr/lib/syslinux/bios/isohdpfx.bin; do
+        if [ -f "$path" ]; then
+            ISOHDPFX="$path"
+            break
+        fi
+    done
+    
+    if [ -n "$ISOHDPFX" ]; then
+        echo "  Usando isohdpfx: $ISOHDPFX"
+        xorriso -as mkisofs \
+            -o "$OUTPUT_ISO" \
+            -isohybrid-mbr "$ISOHDPFX" \
+            -c boot/isolinux/boot.cat \
+            -b boot/isolinux/isolinux.bin \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            "$ISO_ROOT"
+    else
+        echo "  Sin isohdpfx (ISO no será híbrida)"
+        xorriso -as mkisofs \
+            -o "$OUTPUT_ISO" \
+            -c boot/isolinux/boot.cat \
+            -b boot/isolinux/isolinux.bin \
+            -no-emul-boot \
+            -boot-load-size 4 \
+            -boot-info-table \
+            "$ISO_ROOT"
+    fi
     
     if [ ! -f "$OUTPUT_ISO" ]; then
         print_error "No se pudo generar la ISO"
